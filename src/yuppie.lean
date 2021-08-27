@@ -682,12 +682,44 @@ def pie.down :
       apply pie.typed.comp_list; try {assumption},
     }
 
+def plug_in_with_types' 
+  : pie_context → 
+  (Σ (old_focus : pie) (A B : base), old_focus.typed A B) → 
+  (Σ (new_focus : pie) (A' B' : base), new_focus.typed A' B')
+| (add_left right) := λ p, ⟨plug_in 
+| (mul_left right) := _
+| (add_right left) := _
+| (mul_right left) := _
+| (comp_left pie_list right) := _
+| (comp_list left left_pie_list right_pie_list right) := _
+| (comp_right left pie_list) := _
+
+
 def am_state.step (now : am_state) : am_state ⊕ now.focus_right := 
   match now.value with
   | (inl left_value) := 
-    match now.focus.run now.focus_typed left_value with
-    | 
+    match (now.focus.down now.focus_typed left_value, now.board) with
+    | (done a, []) := inr a
+    | (done a, (context :: contexts)) := inl $
+      match context with
+      | (add_left (right : pie)) :=
+        let plugged_in : Σ (new_focus : pie) (A B : base), new_focus.typed A B := 
+          plug_in_with_types context now.focus now.focus_typed in
+        {
+          value := inl left_value, 
+          board := contexts, 
+          focus := ,
+        }
+      | (mul_left (right : pie)) := _
+      | (add_right (left : pie)) := _
+      | (mul_right (left : pie)) := _
+      | (comp_left (pie_list: list pie) (right : pie)) := _
+      | (comp_list (left : pie) (left_list : list pie) (right_list : list pie) (right : pie)) := _
+      | (comp_right (left : pie) (pie_list : list pie)) := _
+      end
+    end
   | (inr right_value) := _
+  end
   
 
 -- end abstract_machine
