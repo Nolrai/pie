@@ -185,7 +185,7 @@ lemma tree.inv_inv : ∀ {p : pie}, p.inv.inv = p
 
 inductive tree.typed : pie → pie_type → pie_type → Type
   | atomic (atom : atomic) {a b} : atom.typed a b → tree.typed ⟪atom⟫ a b
-  | comp_list (a b c) {left : pie} {right : pie} :
+  | comp {a} (b) {c} {left : pie} {right : pie} :
     tree.typed left a b → 
     tree.typed right b c →
     tree.typed (left :∘ right) a c
@@ -502,7 +502,7 @@ lemma fin.index_equiv.aux (m x y : ℕ)
   all_goals{assumption},
 }
 
-lemma fin.index_equiv {n m} : equiv (fin n × fin m) (fin (n * m)) :=
+def fin.index_equiv {n m} : equiv (fin n × fin m) (fin (n * m)) :=
   {
     to_fun := uncurry fin.index,
     inv_fun := fin.unindex,
@@ -543,11 +543,10 @@ lemma fin.index_equiv {n m} : equiv (fin n × fin m) (fin (n * m)) :=
     }
   }
 
-lemma help {n m} : bijective (uncurry fin.index : (fin n × fin m) → fin (n * m)) := by {
-  have : uncurry fin.index = fin.index_equiv := by {
-    unfold_coes,
-    
-  }
+lemma fin.index_bijective {n m} : bijective (uncurry fin.index : (fin n × fin m) → fin (n * m)) := by {
+  have : uncurry fin.index = (fin.index_equiv : (fin n × fin m) → fin (n * m)) := rfl,
+  rw this,
+  apply equiv.bijective
 }
 
 def pie_type_to_fin : ∀ (A : pie_type) (v : A), fin (A.card)
@@ -575,6 +574,8 @@ lemma pie_type_to_fin_injective.aux {l r} (x y) :
       ... ≤ tree.card l + (pie_type_to_fin r y).val : _,
       exact le_self_add,
     }
+
+example {α β} (f : α → β) : bijective f → injective f := by {intros, refine bijective.injective ᾰ}
 
 lemma pie_type_to_fin_injective {A} : function.injective (pie_type_to_fin A) := by {
   apply pie_type.ind_on A,
@@ -617,8 +618,21 @@ lemma pie_type_to_fin_injective {A} : function.injective (pie_type_to_fin A) := 
     intros l r l_ih r_ih x y fx_eq_fy,
     obtain ⟨xₗ, xᵣ⟩ := x,
     obtain ⟨yₗ, yᵣ⟩ := y,
-    rw pie_type_to_fin.on_pair at fx_eq_fy,
-    
+    simp_rw pie_type_to_fin.on_pair at fx_eq_fy,
+    have : ∀ (x : fin (l.card)) (y : fin (r.card)), uncurry fin.index (x,y) = x.index y := λ _ _, rfl,
+    simp_rw ← this at fx_eq_fy; clear this,
+    have : injective (uncurry fin.index : fin l.card × fin r.card → fin (l.card * r.card))
+      := fin.index_bijective.injective,
+    unfold injective at this,
+    have pre_induction : 
+      (pie_type_to_fin _ xₗ, pie_type_to_fin _ xᵣ) = (pie_type_to_fin _ yₗ, pie_type_to_fin _ yᵣ) :=
+      this fx_eq_fy,
+    clear this fx_eq_fy,
+    rw prod.ext_iff at pre_induction,
+    congr,
+    simp at *,
+    apply l_ih pre_induction.1,
+    apply r_ih pre_induction.2,
   }
 }
 
@@ -667,103 +681,84 @@ def subatomic.run' : ∀ (s : subatomic) {A B}, s.typed A B → (A ≃ B) :=
   }
   ⟩
 
-def atomic.run {A B : pie_type} : ∀ (a : atomic), a.typed A B → A → B  
+def atomic.run {A B : pie_type} : ∀ (a : atomic), a.typed A B → A → B
 | (atomic.forward s) p :=  by {cases p, apply s.run, assumption}
 | (atomic.backward s) p := by {cases p, apply s.backrun, assumption}
 
 inductive pie.down.result (A B : pie_type)
   | done : B → pie.down.result
   | left_context (f p : pie) (A' B' : pie_type) : 
-    p.typed A' B' → 
-    (plug_in (add_left f) p).typed A B → 
+    typed p A' B' → 
+    typed (f :+ p) A B → 
     A' → 
     pie.down.result
   | right_context (p g : pie) (A' B' : pie_type) : 
-    p.typed A' B' → 
-    (plug_in (add_right g) p).typed A B → 
+    typed p A' B' → 
+    typed (p :+ g) A B → 
     A' →
     pie.down.result
   | mul_contexts (f g : pie) (A' B' C' D' : pie_type) :
-    f.typed A' B' →
-    g.typed C' D' →
-    (plug_in (mul_left f) g).typed A B →
-    (plug_in (mul_right g) f).typed A B →
+    typed f A' B' →
+    typed g C' D' →
+    typed (f :* g) A B →
     A' →
     C' → 
     pie.down.result
-  | entering_comp (p : pie) (list : list pie) (right : pie) (A' B' : pie_type) :
-    p.typed A A' → 
-    list.typed A' B' → 
-    right.typed B' B →
-    (plug_in (comp_left list right) p).typed A B →
-    A → 
+  | entering_comp (p : pie) (g : pie) :
+    typed (p :∘ g) A B →
+    A →
     pie.down.result
 
 open pie.down.result
 
 def pie.down : 
-  ∀ (p : pie) {A B} (p_typed : p.typed A B), A → pie.down.result A B
-  | (pie.atomic p_atom) A B (pie.typed.atomic .(p_atom) p_atom_typed) left_value :=
+  ∀ (p : pie) {A B} (p_typed : typed p A B), A → pie.down.result A B
+  | ⟪p_atom⟫ A B (tree.typed.atomic .(p_atom) p_atom_typed) left_value :=
     done (p_atom.run p_atom_typed left_value)
-  | (pie.add f g) 
-    (.(A) + .(C)) (.(B) + .(D)) 
-    (pie.typed.add A B C D .(f) .(g) f_typed g_typed) 
+  | (f :+ g) 
+    (.(A) :+: .(C)) (.(B) :+: .(D)) 
+    (typed.add A B C D .(f) .(g) f_typed g_typed) 
     left_value :=
       match left_value with
       | inl f_arg := 
-        left_context g f A B f_typed (typed.add A B C D f g f_typed g_typed) f_arg
+        by {
+            apply right_context, 
+            rotate 2, 
+            exact f_arg, 
+            rotate 3, 
+            exact f_typed, 
+            {
+              exact (typed.add A B C D f g f_typed g_typed),
+            },
+          }
       | inr g_arg := 
-        right_context g f C D g_typed (typed.add A B C D f g f_typed g_typed) g_arg
+        by {
+          apply left_context,
+          rotate 2,
+          exact g_arg,
+          rotate 3,
+          exact g_typed,
+          exact (typed.add A B C D f g f_typed g_typed),
+        }
       end
-  | (pie.mul f g)
-    (.(A) * .(C)) (.(B) * .(D)) 
-    (pie.typed.mul A B C D .(f) .(g) f_typed g_typed)
+  | (f :* g)
+    (.(A) :*: .(C)) (.(B) :*: .(D)) 
+    (typed.mul A B C D .(f) .(g) f_typed g_typed)
     left_value := 
       let h := typed.mul A B C D f g f_typed g_typed in
-        mul_contexts g f C D A B g_typed f_typed h h left_value.snd left_value.fst
-  | (pie.comp_list left list right)
-    .(A) .(B)
-    (pie.typed.comp_list A A' B' B left_typed list_typed right_typed)
+        mul_contexts f g A B C D f_typed g_typed h left_value.fst left_value.snd
+  | (f :∘ g)
+    (A) (B)
+    fg_typed
     left_value := by {
-      apply entering_comp left list right; try {assumption},
-      apply pie.typed.comp_list; try {assumption},
+      apply entering_comp; try {assumption},
     }
-
-def plug_in_with_types' 
-  : pie_context → 
-  (Σ (old_focus : pie) (A B : pie_type), old_focus.typed A B) → 
-  (Σ (new_focus : pie) (A' B' : pie_type), new_focus.typed A' B')
-| (add_left right) := λ p, ⟨plug_in 
-| (mul_left right) := _
-| (add_right left) := _
-| (mul_right left) := _
-| (comp_left pie_list right) := _
-| (comp_list left left_pie_list right_pie_list right) := _
-| (comp_right left pie_list) := _
-
 
 def am_state.step (now : am_state) : am_state ⊕ now.focus_right := 
   match now.value with
   | (inl left_value) := 
     match (now.focus.down now.focus_typed left_value, now.board) with
-    | (done a, []) := inr a
-    | (done a, (context :: contexts)) := inl $
-      match context with
-      | (add_left (right : pie)) :=
-        let plugged_in : Σ (new_focus : pie) (A B : pie_type), new_focus.typed A B := 
-          plug_in_with_types context now.focus now.focus_typed in
-        {
-          value := inl left_value, 
-          board := contexts, 
-          focus := ,
-        }
-      | (mul_left (right : pie)) := _
-      | (add_right (left : pie)) := _
-      | (mul_right (left : pie)) := _
-      | (comp_left (pie_list: list pie) (right : pie)) := _
-      | (comp_list (left : pie) (left_list : list pie) (right_list : list pie) (right : pie)) := _
-      | (comp_right (left : pie) (pie_list : list pie)) := _
-      end
+    | (done a, root) := inr a
     end
   | (inr right_value) := _
   end
