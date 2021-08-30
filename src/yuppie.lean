@@ -681,89 +681,72 @@ def subatomic.run' : ∀ (s : subatomic) {A B}, s.typed A B → (A ≃ B) :=
   }
   ⟩
 
-def atomic.run {A B : pie_type} : ∀ (a : atomic), a.typed A B → A → B
-| (atomic.forward s) p :=  by {cases p, apply s.run, assumption}
-| (atomic.backward s) p := by {cases p, apply s.backrun, assumption}
+#check typed.atomic
 
-inductive pie.down.result (A B : pie_type)
-  | done : B → pie.down.result
-  | left_context (f p : pie) (A' B' : pie_type) : 
-    typed p A' B' → 
-    typed (f :+ p) A B → 
-    A' → 
-    pie.down.result
-  | right_context (p g : pie) (A' B' : pie_type) : 
-    typed p A' B' → 
-    typed (p :+ g) A B → 
-    A' →
-    pie.down.result
-  | mul_contexts (f g : pie) (A' B' C' D' : pie_type) :
-    typed f A' B' →
-    typed g C' D' →
-    typed (f :* g) A B →
-    A' →
-    C' → 
-    pie.down.result
-  | entering_comp (p : pie) (g : pie) :
-    typed (p :∘ g) A B →
-    A →
-    pie.down.result
+def atomic.typed.run {A B : pie_type} : ∀ {a : atomic}, a.typed A B → A ≃ B
+| (atomic.forward s) p :=  by {cases p, apply s.run', assumption}
+| (atomic.backward s) p := by {cases p, symmetry, apply s.run'; assumption}
 
-open pie.down.result
+def function.on_sum {A B C D} (f : A → B) (g : C → D) : (A ⊕ C) → (B ⊕ D) 
+  | (inl l) := (inl (f l))
+  | (inr r) := (inr (g r))
 
-def pie.down : 
-  ∀ (p : pie) {A B} (p_typed : typed p A B), A → pie.down.result A B
-  | ⟪p_atom⟫ A B (tree.typed.atomic .(p_atom) p_atom_typed) left_value :=
-    done (p_atom.run p_atom_typed left_value)
-  | (f :+ g) 
-    (.(A) :+: .(C)) (.(B) :+: .(D)) 
-    (typed.add A B C D .(f) .(g) f_typed g_typed) 
-    left_value :=
-      match left_value with
-      | inl f_arg := 
-        by {
-            apply right_context, 
-            rotate 2, 
-            exact f_arg, 
-            rotate 3, 
-            exact f_typed, 
-            {
-              exact (typed.add A B C D f g f_typed g_typed),
-            },
-          }
-      | inr g_arg := 
-        by {
-          apply left_context,
-          rotate 2,
-          exact g_arg,
-          rotate 3,
-          exact g_typed,
-          exact (typed.add A B C D f g f_typed g_typed),
-        }
-      end
-  | (f :* g)
-    (.(A) :*: .(C)) (.(B) :*: .(D)) 
-    (typed.mul A B C D .(f) .(g) f_typed g_typed)
-    left_value := 
-      let h := typed.mul A B C D f g f_typed g_typed in
-        mul_contexts f g A B C D f_typed g_typed h left_value.fst left_value.snd
-  | (f :∘ g)
-    (A) (B)
-    fg_typed
-    left_value := by {
-      apply entering_comp; try {assumption},
-    }
+@[simp]
+lemma function.on_sum.inl {A B C D} (f : A → B) (g : C → D) (l : A) : 
+  function.on_sum f g (inl l) = inl (f l) := rfl 
 
-def am_state.step (now : am_state) : am_state ⊕ now.focus_right := 
-  match now.value with
-  | (inl left_value) := 
-    match (now.focus.down now.focus_typed left_value, now.board) with
-    | (done a, root) := inr a
-    end
-  | (inr right_value) := _
-  end
-  
+@[simp]
+lemma function.on_sum.inr {A B C D} (f : A → B) (g : C → D) (r : C) : 
+  function.on_sum f g (inr r) = inr (g r) := rfl
 
--- end abstract_machine
--/
-end
+def equiv.on_sum {A B C D} (f : A ≃ B) (g : C ≃ D) : (A ⊕ C) ≃ (B ⊕ D) :=
+  {
+    to_fun := function.on_sum f.to_fun g.to_fun,
+    inv_fun := function.on_sum f.inv_fun g.inv_fun,
+    left_inv := by {
+      intros x,
+      cases x,
+      {
+        rw function.on_sum.inl,
+        rw function.on_sum.inl,
+        rw f.left_inv,
+      },
+      {
+        rw function.on_sum.inr,
+        rw function.on_sum.inr,
+        rw g.left_inv,
+      }
+    },
+    right_inv := by {
+      intros x,
+      cases x,
+      {
+        rw function.on_sum.inl,
+        rw function.on_sum.inl,
+        rw f.right_inv,
+      },
+      {
+        rw function.on_sum.inr,
+        rw function.on_sum.inr,
+        rw g.right_inv,
+      }
+    },
+  }
+
+def equiv.on_prod {A B C D} (f : A ≃ B) (g : C ≃ D) : (A × C) ≃ (B × D) := {
+  to_fun := λ x, prod.mk (f x.1) (g x.2),
+  inv_fun := λ x, prod.mk (f.inv_fun x.1) (g.inv_fun x.2),
+  left_inv := by {intros x, simp},
+  right_inv := by {intros x, simp},
+}
+
+def tree.typed.run : ∀ {A B : pie_type} {p : pie}, typed p A B → A ≃ B
+  | A B ⟪a⟫ (typed.atomic .(a) a_typed) := a_typed.run
+  | A C (f :∘ g) (typed.comp B f_typed g_typed) := f_typed.run.trans g_typed.run
+  | (A :+: C) (B :+: D) (f :+ g) (typed.add _ _ _ _ .(f) .(g) f_typed g_typed) :=
+    f_typed.run.on_sum g_typed.run
+  | (A :*: C) (B :*: D) (f :* g) (typed.mul _ _ _ _ .(f) .(g) f_typed g_typed) :=
+    f_typed.run.on_prod g_typed.run
+
+end abstract_machine
+
