@@ -8,35 +8,35 @@ import init.control.monad_fail
 
 universes u v
 
-inductive tree (op_t : Sort u) (leaf_t : Sort v) 
-  | leaf (tip : leaf_t) : tree
-  | branch (op : op_t) (l r : tree) : tree 
+inductive op_tree (op_t : Sort u) (leaf_t : Sort v) 
+  | leaf (tip : leaf_t) : op_tree
+  | branch (op : op_t) (l r : op_tree) : op_tree 
 
-notation ` ⟪` a `⟫ ` := tree.leaf a
+notation ` ⟪` a `⟫ ` := op_tree.leaf a
 
-def tree.bimap {op leaf leaf' op'} (f : op → op') (g : leaf → leaf') : tree op leaf → tree op' leaf' 
-| ⟪l⟫ := tree.leaf (g l)
-| (tree.branch op l r) := tree.branch (f op) l.bimap r.bimap
+def op_tree.bimap {op leaf leaf' op'} (f : op → op') (g : leaf → leaf') : op_tree op leaf → op_tree op' leaf' 
+| ⟪l⟫ := op_tree.leaf (g l)
+| (op_tree.branch op l r) := op_tree.branch (f op) l.bimap r.bimap
 
-instance : bifunctor tree := {
-  bimap := λ {op op' leaf leaf'} (f : op → op') (g : leaf → leaf'), tree.bimap f g
+instance : bifunctor op_tree := {
+  bimap := λ {op op' leaf leaf'} (f : op → op') (g : leaf → leaf'), op_tree.bimap f g
 }
 
-lemma tree.id_bimap {op_t : Type u} {leaf_t : Type v} : ∀ x : tree op_t leaf_t, bimap id id x = x
-| (tree.leaf l) := rfl
-| (tree.branch op l r) := congr_arg2 (tree.branch op) (tree.id_bimap l) (tree.id_bimap r)
+lemma op_tree.id_bimap {op_t : Type u} {leaf_t : Type v} : ∀ x : op_tree op_t leaf_t, bimap id id x = x
+| (op_tree.leaf l) := rfl
+| (op_tree.branch op l r) := congr_arg2 (op_tree.branch op) (op_tree.id_bimap l) (op_tree.id_bimap r)
 
-lemma tree.bimap_bimap {α₀ α₁ α₂ : Type u} {β₀ β₁ β₂ : Type v}
+lemma op_tree.bimap_bimap {α₀ α₁ α₂ : Type u} {β₀ β₁ β₂ : Type v}
   (f : α₀ → α₁) (f' : α₁ → α₂) 
-  (g : β₀ → β₁) (g' : β₁ → β₂) : ∀ (x : tree α₀ β₀),
+  (g : β₀ → β₁) (g' : β₁ → β₂) : ∀ (x : op_tree α₀ β₀),
     bimap f' g' (bimap f g x) = bimap (f' ∘ f) (g' ∘ g) x 
-| (tree.leaf tip) := rfl
-| (tree.branch op l r) := 
-  congr_arg2 (tree.branch (f' (f op))) (tree.bimap_bimap l) (tree.bimap_bimap r)
+| (op_tree.leaf tip) := rfl
+| (op_tree.branch op l r) := 
+  congr_arg2 (op_tree.branch (f' (f op))) (op_tree.bimap_bimap l) (op_tree.bimap_bimap r)
 
-instance : is_lawful_bifunctor tree := {
-  id_bimap := by {apply tree.id_bimap},
-  bimap_bimap := by {apply tree.bimap_bimap}
+instance : is_lawful_bifunctor op_tree := {
+  id_bimap := by {apply op_tree.id_bimap},
+  bimap_bimap := by {apply op_tree.bimap_bimap}
 }
 
 inductive pie_type_op 
@@ -50,9 +50,9 @@ instance : decidable_eq pie_type_op
 | pie_type_op.mul pie_type_op.mul := is_true rfl
 
 precedence `:+:` :50
-infix ` :+: ` := tree.branch pie_type_op.add 
+infix ` :+: ` := op_tree.branch pie_type_op.add 
 precedence `:*:` :50
-infix ` :*: ` := tree.branch pie_type_op.mul
+infix ` :*: ` := op_tree.branch pie_type_op.mul
 
 open pie_type_op
 
@@ -66,12 +66,12 @@ instance : decidable_eq one_zero
 | one_zero.zero one_zero.one  := is_false (λ hyp, one_zero.no_confusion hyp)
 | one_zero.zero one_zero.zero := is_true rfl
 
-abbreviation pie_type := tree pie_type_op one_zero
+abbreviation pie_type := op_tree pie_type_op one_zero
 
-instance (leaf : Type) : has_add (tree pie_type_op leaf) := ⟨λ l r, l :+: r⟩ 
-instance (leaf : Type) : has_mul (tree pie_type_op leaf) := ⟨λ l r, l :*: r⟩
-instance : has_one pie_type := ⟨tree.leaf one_zero.one⟩
-instance : has_zero pie_type := ⟨tree.leaf one_zero.zero⟩
+instance (leaf : Type) : has_add (op_tree pie_type_op leaf) := ⟨λ l r, l :+: r⟩ 
+instance (leaf : Type) : has_mul (op_tree pie_type_op leaf) := ⟨λ l r, l :*: r⟩
+instance : has_one pie_type := ⟨op_tree.leaf one_zero.one⟩
+instance : has_zero pie_type := ⟨op_tree.leaf one_zero.zero⟩
 
 def pie_type_fold {α} (zero one : α) (add mul : α → α → α) : pie_type → α
   | 0 := zero
@@ -98,134 +98,226 @@ local notation `ff` := pie_type_fold zero one add mul
 
 end
 
-instance tree.decidable_eq (op leaf) [d_op : decidable_eq op] [decidable_eq leaf] : decidable_eq (tree op leaf) 
-  | (tree.leaf x) (tree.leaf y) :=
+instance op_tree.decidable_eq (op leaf) [d_op : decidable_eq op] [decidable_eq leaf] : decidable_eq (op_tree op leaf) 
+  | (op_tree.leaf x) (op_tree.leaf y) :=
     if h : x = y
       then is_true (congr_arg _ h)
-      else is_false (λ hyp, h (tree.leaf.inj_arrow hyp id))
-  | (tree.branch xop xl xr) (tree.branch yop yl yr) :=
-      match (d_op xop yop, tree.decidable_eq xl yl, tree.decidable_eq xr yr) with
+      else is_false (λ hyp, h (op_tree.leaf.inj_arrow hyp id))
+  | (op_tree.branch xop xl xr) (op_tree.branch yop yl yr) :=
+      match (d_op xop yop, op_tree.decidable_eq xl yl, op_tree.decidable_eq xr yr) with
       | (is_true hop, is_true hl, is_true hr) := 
-        is_true (congr (congr (congr_arg tree.branch hop) hl) hr)
-      | (is_false h, _, _) := is_false ( λ hyp, by refine h (tree.branch.inj_arrow hyp (λ hop _ _, hop)))
-      | (_, is_false h, _) := is_false ( λ hyp, by refine h (tree.branch.inj_arrow hyp (λ _ hl  _, hl)))
-      | (_, _, is_false h) := is_false ( λ hyp, by refine h (tree.branch.inj_arrow hyp (λ _ _ hr , hr)))
+        is_true (congr (congr (congr_arg op_tree.branch hop) hl) hr)
+      | (is_false h, _, _) := is_false ( λ hyp, by refine h (op_tree.branch.inj_arrow hyp (λ hop _ _, hop)))
+      | (_, is_false h, _) := is_false ( λ hyp, by refine h (op_tree.branch.inj_arrow hyp (λ _ hl  _, hl)))
+      | (_, _, is_false h) := is_false ( λ hyp, by refine h (op_tree.branch.inj_arrow hyp (λ _ _ hr , hr)))
       end
-  | (tree.leaf _) (tree.branch _ _ _) := is_false (λ hyp, tree.no_confusion hyp)
-  | (tree.branch _ _ _) (tree.leaf _) := is_false (λ hyp, tree.no_confusion hyp)
-  
-inductive subatomic : Type 
-  | id : subatomic
-  | swap_add: subatomic
-  | zero_add : subatomic
-  | assoc_add : subatomic
-  | swap_mul: subatomic
-  | one_mul : subatomic
-  | assoc_mul : subatomic 
-  | distrib : subatomic
-  | distrib0 : subatomic
+  | (op_tree.leaf _) (op_tree.branch _ _ _) := is_false (λ hyp, op_tree.no_confusion hyp)
+  | (op_tree.branch _ _ _) (op_tree.leaf _) := is_false (λ hyp, op_tree.no_confusion hyp)
 
-open subatomic
+inductive pie_atomic : Type 
+  | id : pie_atomic
+  | swap_add: pie_atomic
+  | zero_add : pie_atomic
+  | assoc_add : pie_atomic
+  | swap_mul: pie_atomic
+  | one_mul : pie_atomic
+  | assoc_mul : pie_atomic 
+  | distrib : pie_atomic
+  | distrib0 : pie_atomic
 
-inductive subatomic.typed : subatomic → pie_type → pie_type → Type
-  | id : ∀ b, subatomic.typed id b b
-  | swap_add: ∀ a b : pie_type, subatomic.typed swap_add (a + b) (b + a)
-  | zero_add : ∀ a, subatomic.typed zero_add (0 + a) a
-  | assoc_add : ∀ a b c, subatomic.typed assoc_add (a + b + c) (a + (b + c))
-  | swap_mul: ∀ a b, subatomic.typed swap_mul (a * b) (b * a)
-  | one_mul : ∀ a, subatomic.typed one_mul (1 * a) a
-  | assoc_mul : ∀ a b c, subatomic.typed assoc_mul (a * b * c) (a * (b * c))
-  | distrib : ∀ a b c, subatomic.typed distrib (a * (b + c)) (a * b + a * c)
-  | distrib0 : ∀ a, subatomic.typed distrib0 (a * 0) 0
+open pie_atomic
 
-inductive atomic : Type
-  | forward : subatomic → atomic
-  | backward : subatomic → atomic
+class has_typed α β : Type :=
+  (typed : α → β → β → Type)
 
-open atomic
+inductive pie_atomic_typed : pie_atomic → pie_type → pie_type → Type
+  | id : ∀ b, pie_atomic_typed id b b
+  | swap_add: ∀ a b : pie_type, pie_atomic_typed swap_add (a + b) (b + a)
+  | zero_add : ∀ a, pie_atomic_typed zero_add (0 + a) a
+  | assoc_add : ∀ a b c, pie_atomic_typed assoc_add (a + b + c) (a + (b + c))
+  | swap_mul: ∀ a b, pie_atomic_typed swap_mul (a * b) (b * a)
+  | one_mul : ∀ a, pie_atomic_typed one_mul (1 * a) a
+  | assoc_mul : ∀ a b c, pie_atomic_typed assoc_mul (a * b * c) (a * (b * c))
+  | distrib : ∀ a b c, pie_atomic_typed distrib (a * (b + c)) (a * b + a * c)
+  | distrib0 : ∀ a, pie_atomic_typed distrib0 (a * 0) 0
 
-inductive atomic.typed : atomic → pie_type → pie_type → Type
-  | forward {s : subatomic} {A B : pie_type} : s.typed A B → atomic.typed (forward s) A B
-  | backward {s : subatomic} {A B : pie_type} : s.typed B A → atomic.typed (backward s) A B
+instance : has_typed pie_atomic pie_type := ⟨pie_atomic_typed⟩
 
-def atomic.inv : atomic → atomic
-  | (atomic.forward sa) := atomic.backward sa
-  | (atomic.backward sa) := atomic.forward sa
+notation expr ` ∷ ` A `⇔` B := has_typed.typed expr A B
+
+inductive pie_directed (α : Type) : Type
+  | forward : α → pie_directed
+  | backward : α → pie_directed
+
+open pie_directed
+
+notation `pie_leaf` := pie_directed pie_atomic
+
+inductive pie_directed_typed (α β) [has_typed α β] : pie_directed α → β → β → Type
+  | forward {s : α} {A B : β} : 
+    (s ∷ A ⇔ B) → pie_directed_typed (forward s) A B
+  | backward {s : α} {A B : β} : 
+    (s ∷ B ⇔ A) → pie_directed_typed (backward s) A B
+
+instance pie_directed_has_typed {α β} [has_typed α β] : has_typed (pie_directed α) β :=
+  ⟨pie_directed_typed α β⟩
+
+def pie_directed.inv {α} : pie_directed α → pie_directed α
+  | (forward sa) := backward sa
+  | (backward sa) := forward sa
+
+instance {α} : has_inv (pie_directed α) := ⟨pie_directed.inv⟩
+
+def pie_directed_typed.inv {α} (s : pie_directed α) {β} [has_typed α β] {A B : β} : 
+  (s ∷ A ⇔ B) → (s⁻¹ ∷ B ⇔ A) := by {
+    cases s,
+    all_goals {
+      intros h,
+      cases h,
+      unfold has_inv.inv pie_directed.inv,
+      constructor,
+      assumption
+    },
+  }
 
 inductive pie_op 
   | comp : pie_op
   | type_op : pie_type_op → pie_op 
 
-abbreviation pie := tree pie_op atomic
+abbreviation pie := op_tree pie_op pie_leaf
 
 precedence `:∘` : 50
-infix `:∘` := tree.branch pie_op.comp
+infix `:∘` := op_tree.branch pie_op.comp
 precedence `:+` : 50
-infix `:+` := tree.branch (pie_op.type_op add)
+infix `:+` := op_tree.branch (pie_op.type_op add)
 precedence `:*` : 50
-infix `:*` := tree.branch (pie_op.type_op mul)
+infix `:*` := op_tree.branch (pie_op.type_op mul)
 
-def tree.inv : pie → pie
-  | (tree.leaf atom) := tree.leaf atom.inv
-  | (f :∘ g) := g.inv :∘ f.inv
-  | (f :+ g) := f.inv :+ g.inv
-  | (f :* g) := f.inv :* g.inv
+def pie.inv {α} : op_tree pie_op (pie_directed α) → op_tree pie_op (pie_directed α)
+  | ⟪pleaf⟫ := ⟪pleaf⁻¹⟫
+  | (f :∘ g) := pie.inv g :∘ pie.inv f
+  | (f :+ g) := pie.inv f :+ pie.inv g
+  | (f :* g) := pie.inv f :* pie.inv g
+
+instance pie_has_inv {α} : has_inv (op_tree pie_op (pie_directed α)) :=
+  ⟨pie.inv⟩
 
 @[simp]
-lemma atomic.inv_inv {a : atomic} : a.inv.inv = a := by {
-  cases a; unfold atomic.inv,
+lemma pie.inv_leaf {α} (pleaf : pie_directed α) : 
+  (⟪pleaf⟫ : op_tree pie_op (pie_directed α))⁻¹ = ⟪pleaf⁻¹⟫ := rfl
+
+@[simp]
+lemma pie.inv_comp {α} (f g : op_tree pie_op (pie_directed α)) : 
+  ((f :∘ g) : op_tree pie_op (pie_directed α))⁻¹ = (g⁻¹ :∘ f⁻¹) := rfl
+
+@[simp]
+lemma pie.inv_add {α} (f g : op_tree pie_op (pie_directed α)) : 
+  ((f :+ g) : op_tree pie_op (pie_directed α))⁻¹ = (f⁻¹ :+ g⁻¹) := rfl
+
+@[simp]
+lemma pie.inv_mul {α} (f g : op_tree pie_op (pie_directed α)) : 
+  ((f :* g) : op_tree pie_op (pie_directed α))⁻¹ = (f⁻¹ :* g⁻¹) := rfl
+
+@[simp]
+lemma pie_directed.inv_inv {α} (a : pie_directed α) : (a⁻¹)⁻¹ = a := by {
+  cases a; unfold has_inv.inv pie_directed.inv,
 }
 
 @[simp]
-lemma tree.inv_inv : ∀ {p : pie}, p.inv.inv = p 
-  | ⟪atom⟫ := congr_arg _ atomic.inv_inv
-  | (f :∘ g) := congr_arg2 _ tree.inv_inv tree.inv_inv 
-  | (f :+ g) := congr_arg2 _ tree.inv_inv tree.inv_inv 
-  | (f :* g) := congr_arg2 _ tree.inv_inv tree.inv_inv
+lemma pie.inv_inv : ∀ (p : pie), (p⁻¹)⁻¹ = p 
+  | ⟪atom⟫ := by {unfold_projs, unfold pie.inv, congr, apply pie_directed.inv_inv}
+  | (f :∘ g) := by {unfold_projs, unfold pie.inv, congr; apply pie.inv_inv,}
+  | (f :+ g) := by {unfold_projs, unfold pie.inv, congr; apply pie.inv_inv,}
+  | (f :* g) := by {unfold_projs, unfold pie.inv, congr; apply pie.inv_inv,}
 
-inductive tree.typed : pie → pie_type → pie_type → Type
-  | atomic (atom : atomic) {a b} : atom.typed a b → tree.typed ⟪atom⟫ a b
+inductive pie.typed : pie → pie_type → pie_type → Type
+  | leaf (pleaf : pie_leaf) {a b : pie_type} : (pleaf ∷ a ⇔ b) → (pie.typed ⟪pleaf⟫ a b)
   | comp {a} (b) {c} {left : pie} {right : pie} :
-    tree.typed left a b → 
-    tree.typed right b c →
-    tree.typed (left :∘ right) a c
+    pie.typed left a b → 
+    pie.typed right b c →
+    pie.typed (left :∘ right) a c
   | add (a b c d) (f g : pie) : 
-    tree.typed f a b →
-    tree.typed g c d →
-    tree.typed (f :+ g) (a + c) (b + d)
+    pie.typed f a b →
+    pie.typed g c d →
+    pie.typed (f :+ g) (a + c) (b + d)
   | mul (a b c d) (f g : pie) : 
-    tree.typed f a b →
-    tree.typed g c d →
-    tree.typed (f :* g) (a * c) (b * d)
+    pie.typed f a b →
+    pie.typed g c d →
+    pie.typed (f :* g) (a * c) (b * d)
+
+instance pie.has_typed : has_typed pie pie_type := ⟨pie.typed⟩
+
+def typed_inv_aux :
+  ∀ (p : pie) (A B : pie_type),
+    ((p ∷ A ⇔ B) → (p⁻¹ ∷ B ⇔ A)) × ((p⁻¹ ∷ B ⇔ A) → (p ∷ A ⇔ B))
+  | ⟪leaf⟫ A B := by {
+    split; intros h; rw pie.inv_leaf at *; cases h with _ _ _ h; constructor,
+    {exact pie_directed_typed.inv leaf h},
+    {
+      have : leaf.inv = leaf⁻¹ := rfl, rw this at *, clear this,
+      rw [← pie_directed.inv_inv leaf],
+      {exact pie_directed_typed.inv leaf⁻¹ h},
+    }
+  }
+  | (f :∘ g) A B := by {
+    split; intros h; rw pie.inv_comp at *; 
+      cases h with _ _ _ _ _ C _ _ _ typed₁ typed₂; constructor,
+    apply (typed_inv_aux g C B).fst typed₂,
+    apply (typed_inv_aux f A C).fst typed₁,
+    apply (typed_inv_aux f A C).snd typed₂,
+    apply (typed_inv_aux g C B).snd typed₁,
+  }
+  | (f :+ g) A B := by {
+    split; intros h; rw pie.inv_add at *; 
+      cases h with _ _ _ _ _ _ _ _ _ _ _ 
+      C D C' D' _ _ typed₁ typed₂; constructor,
+    apply (typed_inv_aux f C D).fst typed₁,
+    apply (typed_inv_aux g C' D').fst typed₂,
+    apply (typed_inv_aux f D C).snd typed₁,
+    apply (typed_inv_aux g D' C').snd typed₂,
+  }
+  | (f :* g) A B := by {
+    split; intros h; rw pie.inv_mul at *; 
+      cases h with _ _ _ _ _ _ _ _ _ _ _ 
+      _ _ _ _ _ _ _ _
+      C D C' D' _ _ typed₁ typed₂; constructor,
+    apply (typed_inv_aux f C D).fst typed₁,
+    apply (typed_inv_aux g C' D').fst typed₂,
+    apply (typed_inv_aux f D C).snd typed₁,
+    apply (typed_inv_aux g D' C').snd typed₂,
+  }
+
+def typed_inv {p : pie} {A B : pie_type} (h : p ∷ A ⇔ B) : p⁻¹ ∷ B ⇔ A := 
+  (typed_inv_aux p A B).fst h
 
 section abstract_machine
 
-inductive tree_context (α : Type u) (β : Type v)
-  | root : tree_context
-  | on_left : ∀ (op : α) (up : tree_context) (right : tree α β), tree_context
-  | on_right : ∀ (op : α) (left : tree α β) (up : tree_context), tree_context
+inductive op_tree_context (α : Type u) (β : Type v)
+  | root : op_tree_context
+  | on_left : ∀ (op : α) (up : op_tree_context) (right : op_tree α β), op_tree_context
+  | on_right : ∀ (op : α) (left : op_tree α β) (up : op_tree_context), op_tree_context
 
-open tree_context
+open op_tree_context
 
-notation `pie_context` := tree_context pie_op atomic
+notation `pie_context` := op_tree_context pie_op pie_leaf
 
-def tree_context.plug_in {α β} : tree_context α β → tree α β → tree α β
+def op_tree_context.plug_in {α β} : op_tree_context α β → op_tree α β → op_tree α β
 | root t := t
-| (on_left op up right) t := up.plug_in (tree.branch op t right)  
-| (on_right op left up) t := up.plug_in (tree.branch op left t)
+| (on_left op up right) t := up.plug_in (op_tree.branch op t right)  
+| (on_right op left up) t := up.plug_in (op_tree.branch op left t)
 
 @[simp]
-lemma tree_context.plug_in.root {α β} (t : tree α β) : root.plug_in t = t := rfl 
+lemma op_tree_context.plug_in.root {α β} (t : op_tree α β) : root.plug_in t = t := rfl 
 @[simp]
-lemma tree_context.plug_in.on_left {α β} (op : α) (t right : tree α β) (up) : 
-  (on_left op up right).plug_in t = up.plug_in (tree.branch op t right) := rfl
+lemma op_tree_context.plug_in.on_left {α β} (op : α) (t right : op_tree α β) (up) : 
+  (on_left op up right).plug_in t = up.plug_in (op_tree.branch op t right) := rfl
 @[simp]
-lemma tree_context.plug_in.on_right {α β} (op : α) (t left : tree α β) (up) : 
-  (on_right op left up).plug_in t = up.plug_in (tree.branch op left t) := rfl
+lemma op_tree_context.plug_in.on_right {α β} (op : α) (t left : op_tree α β) (up) : 
+  (on_right op left up).plug_in t = up.plug_in (op_tree.branch op left t) := rfl
 
 def get_type_at : 
-  ∀  (c : pie_context) (p : pie) {A B : pie_type} (t : tree.typed (c.plug_in p) A B),
-  Σ A' B', tree.typed p A' B' := by {
+  ∀  (c : pie_context) (p : pie) {A B : pie_type} (t : pie.typed (c.plug_in p) A B),
+  Σ A' B', pie.typed p A' B' := by {
     intros c,
     induction c; intros,
     {exact ⟨A, B, t⟩},
@@ -233,7 +325,7 @@ def get_type_at :
       let pie_up := (on_left c_op root c_right).plug_in p,
       have : Σ A' B', typed pie_up A' B' := c_ih pie_up t,
       obtain ⟨A', B', pie_up_typed⟩ := this,
-      have : pie_up = tree.branch c_op p c_right := rfl,
+      have : pie_up = op_tree.branch c_op p c_right := rfl,
       rw this at *,
       clear this pie_up,
       cases pie_up_typed,
@@ -252,7 +344,7 @@ def get_type_at :
       let pie_up := (on_right c_op c_left root).plug_in p,
       have : Σ A' B', typed pie_up A' B' := c_ih pie_up t,
       obtain ⟨A', B', pie_up_typed⟩ := this,
-      have : pie_up = tree.branch c_op c_left p := rfl,
+      have : pie_up = op_tree.branch c_op c_left p := rfl,
       rw this at *,
       clear this pie_up,
       cases pie_up_typed,
@@ -269,21 +361,21 @@ def get_type_at :
     }
   }
 
-inductive emptyt
+inductive emptyt.
 
-def tree.to_type : pie_type → Type := pie_type_fold emptyt unit (⊕) (×)
+def pie_type.to_type : pie_type → Type := pie_type_fold emptyt unit (⊕) (×)
 
 instance : has_coe_to_sort pie_type := 
   {
     S := Type,
-    coe := tree.to_type
+    coe := pie_type.to_type
   }
 
 @[simp]lemma pie_type.coe_to_sort.zero : ↥(0 : pie_type) = emptyt := rfl
 @[simp]lemma pie_type.coe_to_sort.one : ↥(1 : pie_type) = unit := rfl
 @[simp]lemma pie_type.coe_to_sort.add (l r : pie_type) : ↥(l + r) = (↥l ⊕ ↥r) := rfl
 @[simp]lemma pie_type.coe_to_sort.mul (l r : pie_type) : ↥(l * r) = (↥l  × ↥r) := rfl
-@[simp]lemma pie_type.coe_to_sort.to_to_type (b : pie_type) : b.to_type = ↥b := rfl
+@[simp]lemma pie_type.coe_to_sort.to_to_type (b : pie_type) : pie_type.to_type b = ↥b := rfl
 
 structure am_state :=
   (focus_left : pie_type)
@@ -293,8 +385,8 @@ structure am_state :=
   (board : pie_context)
   (value : focus_left ⊕ focus_right)
 
-def am_state.typed (state : am_state) : pie_type → pie_type → Type :=
-  (state.board.plug_in state.focus).typed
+instance am_state.typed : has_typed am_state pie_type :=
+  ⟨λ state A B, (state.board.plug_in state.focus) ∷ A ⇔ B⟩
 
 open sum
 
@@ -346,15 +438,15 @@ def distrib_run.inl {A B C : pie_type} {a : A} {b : B} :
 def distrib_run.inr {A B C : pie_type} {a : A} {c : C} : 
   @distrib_run A B C ⟨a, inr c⟩ = inr ⟨a, c⟩ := rfl
 
-def subatomic.run : ∀ (s : subatomic) {A B : pie_type}, s.typed A B → (A → B)
-| subatomic.id := λ A B p, by {cases p, exact id}
+def pie_atomic.run : ∀ (s : pie_atomic) {A B : pie_type}, (s ∷ A ⇔ B) → (A → B)
+| pie_atomic.id := λ A B p, by {cases p, exact id}
 | swap_add := λ A B p, by {cases p, exact sum.swap}
-| subatomic.zero_add := λ A B p, by {cases p, exact zero_add_run}
+| pie_atomic.zero_add := λ A B p, by {cases p, exact zero_add_run}
 | assoc_add := λ A B p, by {cases p, exact assoc_add_run}
 | swap_mul := λ A B p, by {cases p, exact prod.swap}
-| subatomic.one_mul := λ A B p, by {cases p, exact prod.snd}
+| pie_atomic.one_mul := λ A B p, by {cases p, exact prod.snd}
 | assoc_mul := λ A B p, by {cases p, exact assoc_mul_run}
-| subatomic.distrib := λ A B p, by {cases p, exact distrib_run}
+| pie_atomic.distrib := λ A B p, by {cases p, exact distrib_run}
 | distrib0 := λ A B p, by {cases p, exact prod.snd}
 
 def assoc_mul_backrun {A B C : Type} : (A × B × C) → ((A × B) × C)
@@ -406,18 +498,18 @@ def distrib0_backrun (A : pie_type) : (0 : pie_type) → A * 0
 def distrib0_backrun.def (A : pie_type) (z : (0 : pie_type)) : 
   distrib0_backrun A z = (⟨z.cases_on (λ _, A), z⟩ : A * 0) := rfl
 
-def subatomic.backrun : ∀ (s : subatomic) {A B : pie_type}, s.typed A B → (B → A)
-| subatomic.id := λ A B p, by {cases p, exact id}
+def pie_atomic.backrun : ∀ (s : pie_atomic) {A B : pie_type}, (s ∷ A ⇔ B) → (B → A)
+| pie_atomic.id := λ A B p, by {cases p, exact id}
 | swap_add := λ A B p, by {cases p, exact sum.swap}
-| subatomic.zero_add := λ A B p, by {cases p, exact inr}
+| pie_atomic.zero_add := λ A B p, by {cases p, exact inr}
 | assoc_add := λ A B p, by {cases p, exact assoc_add_backrun}
 | swap_mul := λ A B p, by {cases p, exact prod.swap}
-| subatomic.one_mul := λ A B p, by {cases p, exact one_mul_backrun}
+| pie_atomic.one_mul := λ A B p, by {cases p, exact one_mul_backrun}
 | assoc_mul := λ A B p, by {cases p, exact assoc_mul_backrun}
-| subatomic.distrib := λ A B p, by {cases p, exact distrib_backrun}
+| pie_atomic.distrib := λ A B p, by {cases p, exact distrib_backrun}
 | distrib0 := λ A B p, by {cases p, exact distrib0_backrun _}
 
-abbreviation tree.card : pie_type → ℕ := pie_type_fold 0 1 (+) (*)
+abbreviation op_tree.card : pie_type → ℕ := pie_type_fold 0 1 (+) (*)
 
 lemma pie_type.ind (P : pie_type → Prop) 
   (on_zero : P 0)
@@ -570,8 +662,8 @@ lemma pie_type_to_fin_injective.aux {l r} (x y) :
       unfold fin.cast_lt,
       simp,
       unfold_coes,
-      calc (pie_type_to_fin l x).val < tree.card l : (pie_type_to_fin l x).prop
-      ... ≤ tree.card l + (pie_type_to_fin r y).val : _,
+      calc (pie_type_to_fin l x).val < op_tree.card l : (pie_type_to_fin l x).prop
+      ... ≤ op_tree.card l + (pie_type_to_fin r y).val : _,
       exact le_self_add,
     }
 
@@ -646,10 +738,10 @@ lemma prod.swap_def {α β} (a : α) (b : β) : (⟨a,b⟩ : α × β).swap = �
 
 instance pie_type.one.subsingleton : subsingleton (1 : pie_type) := punit.subsingleton
 
-def subatomic.run' : ∀ (s : subatomic) {A B}, s.typed A B → (A ≃ B) :=
+def pie_atomic.run' : ∀ (s : pie_atomic) {A B : pie_type}, (s ∷ A ⇔ B) → (A ≃ B) :=
   λ s A B p, ⟨s.run p, s.backrun p, by {
     intros a,
-    cases p; unfold subatomic.run subatomic.backrun,
+    cases p; unfold pie_atomic.run pie_atomic.backrun,
     {simp_rw id.def},
     {cases a; simp},
     {cases a, cases a, simp},
@@ -665,7 +757,7 @@ def subatomic.run' : ∀ (s : subatomic) {A B}, s.typed A B → (A ≃ B) :=
   },
   by {
     intros a,
-    cases p; unfold subatomic.run subatomic.backrun,
+    cases p; unfold pie_atomic.run pie_atomic.backrun,
     {simp_rw id.def},
     {cases a; simp},
     {simp},
@@ -681,11 +773,9 @@ def subatomic.run' : ∀ (s : subatomic) {A B}, s.typed A B → (A ≃ B) :=
   }
   ⟩
 
-#check typed.atomic
-
-def atomic.typed.run {A B : pie_type} : ∀ {a : atomic}, a.typed A B → A ≃ B
-| (atomic.forward s) p :=  by {cases p, apply s.run', assumption}
-| (atomic.backward s) p := by {cases p, symmetry, apply s.run'; assumption}
+def pie_leaf.typed.run {A B : pie_type} : ∀ {a : pie_leaf}, (a ∷ A ⇔ B) → A ≃ B
+| (forward s) p :=  by {cases p, apply s.run', assumption}
+| (backward s) p := by {cases p, symmetry, apply s.run'; assumption}
 
 def function.on_sum {A B C D} (f : A → B) (g : C → D) : (A ⊕ C) → (B ⊕ D) 
   | (inl l) := (inl (f l))
@@ -740,8 +830,8 @@ def equiv.on_prod {A B C D} (f : A ≃ B) (g : C ≃ D) : (A × C) ≃ (B × D) 
   right_inv := by {intros x, simp},
 }
 
-def tree.typed.run : ∀ {A B : pie_type} {p : pie}, typed p A B → A ≃ B
-  | A B ⟪a⟫ (typed.atomic .(a) a_typed) := a_typed.run
+def pie.typed.run : ∀ {A B : pie_type} {p : pie}, typed p A B → A ≃ B
+  | A B ⟪a⟫ (typed.leaf pleaf pleaf_typed) := pie_leaf.typed.run pleaf_typed
   | A C (f :∘ g) (typed.comp B f_typed g_typed) := f_typed.run.trans g_typed.run
   | (A :+: C) (B :+: D) (f :+ g) (typed.add _ _ _ _ .(f) .(g) f_typed g_typed) :=
     f_typed.run.on_sum g_typed.run
