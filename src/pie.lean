@@ -143,7 +143,7 @@ inductive pie_atomic_typed : pie_atomic → pie_type → pie_type → Type
 
 instance : has_typed pie_atomic pie_type := ⟨pie_atomic_typed⟩
 
-notation expr ` ∷ ` A `⇔` B := has_typed.typed expr A B
+notation expr ` ∷ ` A ` ⇔ ` B := has_typed.typed expr A B
 
 inductive pie_directed (α : Type) : Type
   | forward : α → pie_directed
@@ -230,22 +230,22 @@ lemma pie.inv_inv : ∀ (p : pie), (p⁻¹)⁻¹ = p
   | (f :+ g) := by {unfold_projs, unfold pie.inv, congr; apply pie.inv_inv,}
   | (f :* g) := by {unfold_projs, unfold pie.inv, congr; apply pie.inv_inv,}
 
-inductive pie.typed : pie → pie_type → pie_type → Type
-  | leaf (pleaf : pie_leaf) {a b : pie_type} : (pleaf ∷ a ⇔ b) → (pie.typed ⟪pleaf⟫ a b)
-  | comp {a} (b) {c} {left : pie} {right : pie} :
-    pie.typed left a b → 
-    pie.typed right b c →
-    pie.typed (left :∘ right) a c
-  | add (a b c d) (f g : pie) : 
-    pie.typed f a b →
-    pie.typed g c d →
-    pie.typed (f :+ g) (a + c) (b + d)
-  | mul (a b c d) (f g : pie) : 
-    pie.typed f a b →
-    pie.typed g c d →
-    pie.typed (f :* g) (a * c) (b * d)
+inductive pie_typed {α} [has_typed α pie_type] : op_tree pie_op α → pie_type → pie_type → Type
+  | leaf (pleaf : α) {a b : pie_type} : (pleaf ∷ a ⇔ b) → (pie_typed ⟪pleaf⟫ a b)
+  | comp {a} (b) {c} {left : op_tree pie_op α} {right : op_tree pie_op α} :
+    pie_typed left a b → 
+    pie_typed right b c →
+    pie_typed (left :∘ right) a c
+  | add (a b c d) (f g : op_tree pie_op α) : 
+    pie_typed f a b →
+    pie_typed g c d →
+    pie_typed (f :+ g) (a + c) (b + d)
+  | mul (a b c d) (f g : op_tree pie_op α) : 
+    pie_typed f a b →
+    pie_typed g c d →
+    pie_typed (f :* g) (a * c) (b * d)
 
-instance pie.has_typed : has_typed pie pie_type := ⟨pie.typed⟩
+instance pie.has_typed : has_typed pie pie_type := ⟨pie_typed⟩
 
 def typed_inv_aux :
   ∀ (p : pie) (A B : pie_type),
@@ -316,14 +316,14 @@ lemma op_tree_context.plug_in.on_right {α β} (op : α) (t left : op_tree α β
   (on_right op left up).plug_in t = up.plug_in (op_tree.branch op left t) := rfl
 
 def get_type_at : 
-  ∀  (c : pie_context) (p : pie) {A B : pie_type} (t : pie.typed (c.plug_in p) A B),
-  Σ A' B', pie.typed p A' B' := by {
+  ∀  (c : pie_context) (p : pie) {A B : pie_type} (t : pie_typed (c.plug_in p) A B),
+  Σ A' B', pie_typed p A' B' := by {
     intros c,
     induction c; intros,
     {exact ⟨A, B, t⟩},
     {
       let pie_up := (on_left c_op root c_right).plug_in p,
-      have : Σ A' B', typed pie_up A' B' := c_ih pie_up t,
+      have : Σ A' B', pie_typed pie_up A' B' := c_ih pie_up t,
       obtain ⟨A', B', pie_up_typed⟩ := this,
       have : pie_up = op_tree.branch c_op p c_right := rfl,
       rw this at *,
@@ -342,7 +342,7 @@ def get_type_at :
     },
     {
       let pie_up := (on_right c_op c_left root).plug_in p,
-      have : Σ A' B', typed pie_up A' B' := c_ih pie_up t,
+      have : Σ A' B', pie_typed pie_up A' B' := c_ih pie_up t,
       obtain ⟨A', B', pie_up_typed⟩ := this,
       have : pie_up = op_tree.branch c_op c_left p := rfl,
       rw this at *,
@@ -381,7 +381,7 @@ structure am_state :=
   (focus_left : pie_type)
   (focus_right : pie_type)
   (focus : pie)
-  (focus_typed : typed focus focus_left focus_right)
+  (focus_typed : (focus ∷ focus_left ⇔ focus_right))
   (board : pie_context)
   (value : focus_left ⊕ focus_right)
 
@@ -667,8 +667,6 @@ lemma pie_type_to_fin_injective.aux {l r} (x y) :
       exact le_self_add,
     }
 
-example {α β} (f : α → β) : bijective f → injective f := by {intros, refine bijective.injective ᾰ}
-
 lemma pie_type_to_fin_injective {A} : function.injective (pie_type_to_fin A) := by {
   apply pie_type.ind_on A,
   {
@@ -830,12 +828,14 @@ def equiv.on_prod {A B C D} (f : A ≃ B) (g : C ≃ D) : (A × C) ≃ (B × D) 
   right_inv := by {intros x, simp},
 }
 
-def pie.typed.run : ∀ {A B : pie_type} {p : pie}, typed p A B → A ≃ B
-  | A B ⟪a⟫ (typed.leaf pleaf pleaf_typed) := pie_leaf.typed.run pleaf_typed
-  | A C (f :∘ g) (typed.comp B f_typed g_typed) := f_typed.run.trans g_typed.run
-  | (A :+: C) (B :+: D) (f :+ g) (typed.add _ _ _ _ .(f) .(g) f_typed g_typed) :=
+open pie_typed
+
+def pie_typed.run : ∀ {A B : pie_type} {p : pie}, (p ∷ A ⇔ B) → A ≃ B
+  | A B ⟪a⟫ (leaf pleaf pleaf_typed) := pie_leaf.typed.run pleaf_typed
+  | A C (f :∘ g) (comp B f_typed g_typed) := f_typed.run.trans g_typed.run
+  | (A :+: C) (B :+: D) (f :+ g) (add _ _ _ _ .(f) .(g) f_typed g_typed) :=
     f_typed.run.on_sum g_typed.run
-  | (A :*: C) (B :*: D) (f :* g) (typed.mul _ _ _ _ .(f) .(g) f_typed g_typed) :=
+  | (A :*: C) (B :*: D) (f :* g) (mul _ _ _ _ .(f) .(g) f_typed g_typed) :=
     f_typed.run.on_prod g_typed.run
 
 end abstract_machine
