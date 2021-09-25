@@ -1,0 +1,8 @@
+[package]
+name = "pie"
+version = "0.1"
+lean_version = "leanprover-community/lean:3.33.0"
+path = "src"
+
+[dependencies]
+mathlib = {git = "https://github.com/leanprover-community/mathlib", rev = "64b794a0aae303e3ef9b8c7b5003db6e33a4e05e"}
