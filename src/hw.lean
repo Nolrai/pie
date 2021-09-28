@@ -10,6 +10,7 @@ import data.equiv.fintype
 import order.lexicographic
 import data.hash_map
 import data.nat.log
+import data.subtype
 
 def arg_list (i n : ℕ) := {v : vector (fin i) n // v.to_list.nodup}
 
@@ -22,14 +23,12 @@ inductive rcmd (i : ℕ) : Type
 -- | swap : fin 4 → fin 4 → cmd
 | cnot (args : arg_list i 2) : rcmd
 | toffoli : arg_list i 3 → rcmd
-| fredkin : arg_list i 3 → rcmd
 
 open rcmd
 def rcmd.rank {i} : rcmd i → ℕ
   | (tog _) := 1
   | (cnot _) := 2
   | (toffoli _) := 3
-  | (fredkin _) := 4
 
 def rcmd4.repr : rcmd 4 → string
   | (tog a) :=
@@ -38,8 +37,6 @@ def rcmd4.repr : rcmd 4 → string
     "c" ++ repr a.to_vector.head ++ repr a.to_vector.tail.head
   | (toffoli a) :=
     "t" ++ repr a.to_vector.head ++ repr a.to_vector.tail.head ++ repr a.to_vector.tail.tail.head
-  | (fredkin a) :=
-    "f" ++ repr a.to_vector.head ++ repr a.to_vector.tail.head ++ repr a.to_vector.tail.tail.head
 
 instance : has_repr (rcmd 4) := {
   repr := rcmd4.repr
@@ -49,13 +46,11 @@ instance : has_repr (rcmd 4) := {
 @[simp] lemma rcmd.rank_tog (size : ℕ) (i : fin size) : rcmd.rank (tog i) = 1 := rfl
 @[simp] lemma rcmd.rank_cnot (size : ℕ) (i) : rcmd.rank (cnot i : rcmd size) = 2 := rfl
 @[simp] lemma rcmd.rank_toffoli (size : ℕ) (i) : rcmd.rank (toffoli i : rcmd size) = 3 := rfl
-@[simp] lemma rcmd.rank_fredkin (size : ℕ) (i) : rcmd.rank (fredkin i : rcmd size) = 4 := rfl
 
 def rcmd.args {i} : rcmd i → list (fin i)
   | (tog a) := [a]
   | (cnot a) := a.to_list
   | (toffoli a) := a.to_list
-  | (fredkin a) := a.to_list
 
 open function
 
@@ -120,10 +115,6 @@ def rcmd.run {size : ℕ} : rcmd size → array size bool → array size bool
       then
         let d' := by {apply list.nodup_of_nodup_cons d} in
         (cnot ⟨⟨[control_b, target], rfl⟩, d'⟩ ).run arr
-      else arr
-  | (fredkin {val := ⟨[control, target_a, target_b], _⟩, property := _}) := λ arr,
-    if arr.read control
-      then (arr.write target_a (arr.read target_b)).write target_b (arr.read target_a)
       else arr
   using_well_founded {rel_tac := λ _ _, `[exact ⟨_, measure_wf rcmd.rank⟩]}
 
@@ -221,57 +212,6 @@ lemma rcmd.run_self (size : ℕ) : ∀ (c : rcmd size) (arr), c.run (c.run arr) 
       rw if_pos this,
     },
   }
-  | (fredkin {val := ⟨[control, target_a, target_b], _⟩, property := d}) := λ arr, by {
-    unfold vector.to_list at d,
-    rw nodup_3 at d,
-    obtain ⟨contro_ne_target_a, control_ne_target_b, target_a_ne_target_b⟩ := d,
-    unfold rcmd.run,
-    have : ((arr.write target_a (arr.read target_b)).write target_b (arr.read target_a)).read control =
-      arr.read control,
-    {
-      rw array.read_write_of_ne,
-      rw array.read_write_of_ne,
-      symmetry,
-      assumption,
-      symmetry,
-      assumption,
-    },
-    split_ifs; try {rw this}; clear this,
-    {
-      ext,
-      have eq_a : decidable (i = target_a) := by apply_instance,
-      cases eq_a with ne_a eq_a,
-      {
-        have eq_b : decidable (i = target_b) := by apply_instance,
-        cases eq_b with ne_b eq_b,
-        {
-          repeat {rw array.read_write_of_ne},
-          all_goals {symmetry, assumption},
-        },
-        {
-          rw eq_b, clear ne_a eq_b i,
-          rw array.read_write,
-          rw array.read_write_of_ne _ _ target_a_ne_target_b.symm,
-          rw array.read_write,
-        }
-      },
-      {
-          rw eq_a, clear eq_a i,
-          rw array.read_write,
-          rw array.read_write_of_ne _ _ target_a_ne_target_b.symm,
-          rw array.read_write,
-      }
-    },
-    {
-      exfalso,
-      apply h_1,
-      rw array.read_write_of_ne,
-      rw array.read_write_of_ne,
-      exact h,
-      all_goals {symmetry, assumption}
-    },
-    refl,
-  }
   using_well_founded {rel_tac := λ _ _, `[exact ⟨_, measure_wf rcmd.rank⟩]}
 
 instance : monad_fail list := {
@@ -301,7 +241,7 @@ lemma mem_list_out (α) [fintype α] [linear_order α] (x : α) : x ∈ list_out
   exact fintype.complete x
 }
 
-lemma list.mem_bind_op {α β} {b : β} {l : list α} {f : α → list β} :
+lemma mem_bind_op {α β} {b : β} {l : list α} {f : α → list β} :
   b ∈ (l >>= f) ↔ ∃ a ∈ l, b ∈ f a := by {
   unfold has_bind.bind,
   apply list.mem_bind
@@ -322,7 +262,7 @@ def mem_mk_arg_list {i n} {a : arg_list i n} :
     },
     {
       unfold mk_arg_list,
-      simp_rw list.mem_bind_op,
+      simp_rw mem_bind_op,
       cases l,
       {cases l_length},
       use l_hd,
@@ -354,7 +294,6 @@ def rcmd.elems' {i} : ℕ → list (rcmd i)
   | 1 := (list_out (fin i)).map tog
   | 2 := cnot <$> (mk_arg_list (list_out (fin i)))
   | 3 := toffoli <$> (mk_arg_list (list_out (fin i)))
-  | 4 := fredkin <$> (mk_arg_list (list_out (fin i)))
   | n := monad_fail.fail "ignore"
 
 def rcmd.elems {i} : list (rcmd i) :=
@@ -385,16 +324,6 @@ lemma rcmd.mem_elems {i} (c : rcmd i) : c ∈ (rcmd.elems : list (rcmd i)) := by
   },
   {
     apply list.mem_append_left,
-    apply list.mem_append_right,
-    unfold rcmd.elems',
-    rw list.map_eq_map,
-    rw list.mem_map,
-    use c,
-    split,
-    apply mem_mk_arg_list,
-    refl
-  },
-  {
     apply list.mem_append_right,
     unfold rcmd.elems',
     rw list.map_eq_map,
@@ -457,32 +386,450 @@ def programs3 : pr_hash_map 4 3 :=
       then pure (p1.head ::ᵥ p2)
       else []
 
-set_option profiler true
-set_option timeout 0
+-- times out at ~20 seconds
+-- #eval programs3.entries.length
 
-#eval (rcmd.elems : list (rcmd 4)).length
+def array.unsplit {n m : ℕ} {α} (l : array n α) (r : array m α) : array (n + m) α :=
+  {
+    data :=
+      λ i, if h : n ≤ i.val
+        then r.read ⟨i.val - n, ((sub_lt_iff_left h).mpr i.prop)⟩
+        else l.read ⟨i.val, not_le.mp h⟩
+  }
 
-#eval programs2.entries.length
-#eval programs3.entries.length
 
-def programs5 : pr_hash_map 4 5 :=
-  list.foldl pr_hash_map.insert (mk_hash_map (2 ^ 16)) $ do
-    ⟨_, (p2 : vector (rcmd 4) 2)⟩ <- programs2.entries,
-    ⟨_, (p3 : vector (rcmd 4) 3)⟩ <- programs3.entries,
-    pure (p2.append p3)
 
-def programs10 : pr_hash_map 4 10 :=
-  list.foldl pr_hash_map.insert (mk_hash_map (2 ^ 16)) $ do
-    ⟨_, (p2 : vector (rcmd 4) 5)⟩ <- programs5.entries,
-    ⟨_, (p3 : vector (rcmd 4) 5)⟩ <- programs5.entries,
-    pure (p2.append p3)
+def array.split_at (n : ℕ) (m : ℕ) {α} : array (n + m) α → array n α × array m α
+  | {data := f} :=
+    {
+      fst := {data := λ i, f (fin.cast_add m i) },
+      snd := {data := λ i, f ⟨n + i.val, add_lt_add_left i.prop n⟩}
+    }
 
-#eval programs10.entries.length
+def run_ancilla (n : ℕ) {m : ℕ} (program : list (rcmd (m + n))) : array m bool → (array m bool × array n bool)
+  | small_arr :=
+    let big_arr : array (m + n) bool := small_arr.unsplit {data := λ _, ff} in
+    (program.run big_arr).split_at m n
 
-#check pr_hash_map 4 11
+namespace list
 
-def programs11 : pr_hash_map 4 (11 : fin 12) :=
-  list.foldl pr_hash_map.insert (mk_hash_map (2 ^ 16)) $ do
-    (c : rcmd 4) <- rcmd.elems,
-    ⟨_, (p : vector (rcmd 4) 10)⟩ <- programs10.entries,
-    pure (c ::ᵥ p)
+variable {α : Type}
+
+lemma lookup_eq_some_mem [decidable_eq α] {a x : α} {l : list _}  : list.lookup a l = some x → (a, x).to_sigma ∈ l := by {
+  intros h,
+  induction l,
+  { rw list.lookup_nil at h, cases h},
+  obtain ⟨a', x'⟩ := l_hd,
+  have : decidable (a = a') := by apply_instance,
+  cases this,
+  {
+    rw list.lookup_cons_ne at h,
+    exact list.mem_cons_of_mem ⟨a', x'⟩ (l_ih h),
+    simp,
+    exact this,
+  },
+  {
+    rw this at *,
+    rw list.lookup_cons_eq at h,
+    have x'_eq : x' = x := by {injection h},
+    rw x'_eq at *, clear x'_eq h,
+    apply list.mem_cons_self,
+  }
+}
+
+lemma nodup_of_perm_of_nodup (l l₂ : list α) : l ~ l₂ → l.nodup → l₂.nodup :=
+  by {intros, exact (list.perm.nodup_iff ᾰ).mp ᾰ_1}
+
+lemma nmem_append_iff (a : α) (l₁ l₂ : list α) : (a ∉ l₁ ∧ a ∉ l₂) ↔ a ∉ (l₁ ++ l₂) := by {
+  induction l₁,
+  rw list.nil_append,
+  simp,
+  simp at *,
+  split; intros h₁,
+  cases h₁,
+  intros h₂,
+  cases h₂,
+  apply h₁_left,
+  left, assumption,
+  cases h₂,
+  apply h₁_left,
+  right, assumption,
+  apply h₁_right,
+  exact h₂,
+  split,
+  intro h₂,
+  apply h₁,
+  cases h₂,
+  left, assumption,
+  right, left, assumption,
+  intros h₂,
+  apply h₁,
+  right, right, assumption,
+}
+
+lemma nodup_of_insert
+  (b : α) (l₂ l₁ : list α) (l₁l₂_nodup : (l₁ ++ b :: l₂).nodup) :
+  (l₁ ++ l₂).nodup := by {
+  induction l₁,
+  {simp_rw list.nil_append at *, apply list.nodup_of_nodup_cons l₁l₂_nodup},
+  simp_rw list.cons_append at *,
+  simp_rw list.nodup_cons at *,
+  split,
+  rw [← list.nmem_append_iff] at *,
+  split,
+  exact l₁l₂_nodup.left.left,
+  apply list.not_mem_of_not_mem_cons,
+  exact l₁l₂_nodup.left.right,
+  apply l₁_ih,
+  exact l₁l₂_nodup.right,
+}
+
+lemma ne_of_nodup_append (a b : α) (l₁ l₂ : list α) :
+  a ∈ l₁ → b ∈ l₂ → (l₁ ++ l₂).nodup → a ≠ b := by {
+  intros a_in_l₁ b_in_l₂ l₁l₂_nodup,
+  induction l₂; cases b_in_l₂,
+  {
+    rw ← b_in_l₂ at *,
+    clear' l₂_hd b_in_l₂ l₂_ih,
+    induction l₁; cases a_in_l₁,
+    {
+      rw ← a_in_l₁ at *,
+      clear' l₁_hd a_in_l₁ l₁_ih,
+      simp at *,
+      obtain ⟨nodup_left, nodup_right⟩ := l₁l₂_nodup,
+      intros h,
+      apply nodup_left,
+      right, left, assumption,
+    },
+    apply l₁_ih,
+    {assumption},
+    apply list.nodup_of_nodup_cons l₁l₂_nodup,
+  },
+  apply l₂_ih; clear l₂_ih,
+  {assumption},
+  clear_except l₁ l₂ l₁l₂_nodup,
+  clear a_in_l₁,
+  apply nodup_of_insert,
+  assumption,
+}
+
+lemma split_at_mem
+  {a : α} {l : list α} (a_in_l : a ∈ l) :
+  ∃ (llₗ llᵣ : list α), l = llₗ ++ a :: llᵣ := by {
+  induction l; cases a_in_l,
+  cases a_in_l, clear a_in_l,
+  use [nil, l_tl],
+  simp,
+  have := l_ih a_in_l,
+  obtain ⟨llₗ, llᵣ, eq_l⟩ := this,
+  use [l_hd :: llₗ, llᵣ],
+  rw eq_l,
+  simp,
+}
+
+lemma mem_split_at_mem
+  {a b : α} {l : list α}
+  (a_in_l : a ∈ l)
+  (b_in_l : b ∈ l)
+  (a_ne_b : a ≠ b) :
+  ∃ (llₗ llᵣ : list α),
+    l = llₗ ++ a :: llᵣ ∧
+      (b ∈ llₗ ∨ b ∈ llᵣ) := by {
+  have := split_at_mem a_in_l, clear a_in_l,
+  obtain ⟨llₗ, llᵣ, eq_l⟩ := this,
+  use [llₗ, llᵣ],
+  split, {assumption},
+  rw eq_l at *, clear eq_l,
+  have : b ∈ llₗ ∨ b ∈ a :: llᵣ := by {exact mem_append.mp b_in_l},
+  cases this, {left, assumption},
+  cases this, {exfalso, apply a_ne_b, symmetry, assumption},
+  right, assumption,
+}
+
+lemma map_snd_of_zip (lₗ lᵣ : list α) (length_ok : lᵣ.length ≤ lₗ.length) :
+  prod.snd <$> lₗ.zip lᵣ = lᵣ := by {
+  revert lₗ,
+  induction lᵣ, {simp},
+  intros,
+  cases lₗ, {simp at length_ok, cases length_ok},
+  simp at *,
+  apply lᵣ_ih _ length_ok,
+}
+
+end list
+
+section perm_of_elems_equiv_bijection
+
+parameters {α : Type} [linear_order α] [fintype α]
+
+section to_fun
+
+parameter (l : {l : list α // (fintype.elems α).sort (≤) ~ l})
+
+def lookup_list : list (Σ x : α, α) := prod.to_sigma <$> ((fintype.elems α).sort (≤)).zip l.val
+def lookup_list_inv : list (Σ x : α, α) := prod.to_sigma <$> l.val.zip ((fintype.elems α).sort (≤))
+
+
+def option.from_some {α} : ∀ (x : option α), x ≠ none → α
+  | (some a) _ := a
+  | none p := by {exfalso, apply p, refl}
+
+lemma option.from_some_injective {α} : ∀ {x y : option α} {px py},
+  x.from_some px = y.from_some py → x = y
+  | (some a) (some .(a)) _ _ rfl := rfl
+  | none _ px _ h := by {exfalso, apply px, refl}
+  | _ none _ py h := by {exfalso, apply py, refl}
+
+lemma option.from_some_eq_iff {α : Type} : ∀ {x : option α} {p : x ≠ none} {a : α},
+  x.from_some p = a ↔ x = some a := by {
+    intros,
+    cases x,
+    exfalso,
+    apply p,
+    refl,
+    rw option.from_some,
+    split; intro h,
+    congr; apply h,
+    injection h,
+  }
+
+lemma option.some_from_some {α} {x : option α} {p} : some (x.from_some p) = x := by {
+  cases x,
+  {exfalso, apply p, refl},
+  rw option.from_some,
+}
+
+def to_fun_val (a : α) : α :=
+  (list.lookup a lookup_list).from_some
+    (by {
+      intros eq_none,
+      rw list.lookup_eq_none at eq_none,
+      apply eq_none,
+      rw lookup_list,
+      rw list.keys,
+      unfold functor.map,
+      rw list.map_map,
+      have :
+        list.map (sigma.fst ∘ prod.to_sigma) ((finset.sort has_le.le (fintype.elems α)).zip l.val) =
+          finset.sort has_le.le (fintype.elems α),
+      {
+        unfold comp,
+        simp,
+        rw list.map_fst_zip,
+        apply le_of_eq,
+        apply list.perm.length_eq,
+        apply l.prop,
+      },
+      rw this, clear this,
+      rw finset.mem_sort,
+      apply fintype.complete,
+    })
+
+def to_fun_val_inv (a : α) : α :=
+  (list.lookup a lookup_list_inv).from_some
+    (by {
+      intros eq_none,
+      rw list.lookup_eq_none at eq_none,
+      apply eq_none,
+      rw lookup_list_inv,
+      rw list.keys,
+      unfold functor.map,
+      rw list.map_map,
+      have :
+        list.map (sigma.fst ∘ prod.to_sigma) (l.val.zip (finset.sort has_le.le (fintype.elems α))) =
+          l,
+      {
+        unfold comp,
+        simp,
+        rw list.map_fst_zip,
+        apply le_of_eq,
+        apply list.perm.length_eq,
+        apply l.prop.symm,
+      },
+      rw this, clear this,
+      rw ← list.perm.mem_iff l.prop,
+      rw finset.mem_sort,
+      apply fintype.complete,
+    })
+
+lemma to_fun_aux {a : α} : (a, to_fun_val a).to_sigma ∈ lookup_list := by {
+  apply list.lookup_eq_some_mem,
+  rw to_fun_val,
+  rw option.some_from_some,
+}
+
+lemma to_fun_injective : injective to_fun_val := by {
+  intros a₁ a₂ f_a₁_eq_f_a₂,
+  have a₁_f_a₁_in_lookup_list : (a₁, to_fun_val a₁).to_sigma ∈ lookup_list,
+  apply to_fun_aux,
+  have a₁_f_a₂_in_lookup_list : (a₂, to_fun_val a₁).to_sigma ∈ lookup_list,
+  rw f_a₁_eq_f_a₂,
+  apply to_fun_aux,
+  have a₁_a₂ : decidable (a₁ = a₂) := by apply_instance,
+  cases a₁_a₂, rotate, exact a₁_a₂, rotate,
+
+  suffices : ∃ l₁ l₂ a, a ∈ l₁ ∧ a ∈ l₂ ∧ l₁ ++ l₂ = l.val,
+  {
+    exfalso,
+    have l_nodup : l.val.nodup,
+    {
+      apply (list.perm.nodup_iff l.prop).mp,
+      exact finset.sort_nodup has_le.le (fintype.elems α)
+    },
+    obtain ⟨l₁, l₂, a, a_in_l₁, a_in_l₂, l₁l₂_eq_l⟩ := this,
+    suffices : a ≠ a, {apply this, refl},
+    apply list.ne_of_nodup_append,
+    apply a_in_l₁,
+    apply a_in_l₂,
+    rw l₁l₂_eq_l,
+    assumption,
+  },
+
+  have : ∃ llₗ llᵣ,
+    lookup_list = llₗ ++ (a₁, to_fun_val a₁).to_sigma :: llᵣ ∧
+      ((a₂, to_fun_val a₁).to_sigma ∈ llₗ ∨ (a₂, to_fun_val a₁).to_sigma ∈ llᵣ),
+  {
+    apply list.mem_split_at_mem; try {assumption},
+    intros ne_hyp,
+    apply a₁_a₂,
+    cases ne_hyp,
+    refl,
+  }, clear f_a₁_eq_f_a₂ a₁_f_a₁_in_lookup_list a₁_f_a₂_in_lookup_list,
+  obtain ⟨llₗ, llᵣ, lookup_list_eq, in_ll⟩ := this,
+
+  {
+    rcases in_ll with (in_llₗ | in_llᵣ),
+    {
+      set to_snd : (Σ (x : α), α) → α := sigma.snd with to_snd_def,
+      have lookup_eq_2 : to_snd <$> lookup_list = to_snd <$> llₗ ++ to_fun_val a₁ :: to_snd <$> llᵣ,
+      rw lookup_list_eq,
+      simp,
+      use [to_snd <$> llₗ, to_fun_val a₁ :: to_snd <$> llᵣ, to_fun_val a₁],
+      split,
+      {
+        unfold functor.map,
+        rw list.mem_map,
+        use (a₂, to_fun_val a₁).to_sigma,
+        split,
+        exact in_llₗ,
+        unfold prod.to_sigma,
+      },
+      split, {apply list.mem_cons_self},
+      {
+        transitivity (to_snd <$> lookup_list),
+        symmetry,
+        exact lookup_eq_2,
+        rw lookup_list,
+        have : ∀ l : list (α × α), to_snd <$> prod.to_sigma <$> l = prod.snd <$> l,
+        {
+          clear_except,
+          intros,
+          unfold functor.map,
+          induction l,
+          simp_rw list.map_nil,
+          simp_rw list.map_cons,
+          obtain ⟨x, y⟩ := l_hd,
+          simp,
+          rw ← l_ih,
+          symmetry,
+          apply list.map_map,
+        },
+        rw this, clear this,
+        rw list.map_snd_of_zip,
+        apply le_of_eq,
+        apply list.perm.length_eq,
+        symmetry,
+        exact l.prop,
+      }
+    },
+    {
+      set to_snd : (Σ (x : α), α) → α := sigma.snd with to_snd_def,
+      have lookup_eq_2 :
+        to_snd <$> lookup_list = to_snd <$> llₗ ++ [to_fun_val a₁] ++ to_snd <$> llᵣ,
+      {
+        rw lookup_list_eq,
+        simp,
+      },
+      use [to_snd <$> llₗ ++ [to_fun_val a₁], to_snd <$> llᵣ, to_fun_val a₁],
+      split,
+      {
+        apply list.mem_append_right,
+        apply list.mem_cons_self,
+      },
+      split,
+      {
+        unfold functor.map,
+        rw list.mem_map,
+        use (a₂, to_fun_val a₁).to_sigma,
+        split,
+        exact in_llᵣ,
+        unfold prod.to_sigma,
+      },
+      {
+        transitivity (to_snd <$> lookup_list),
+        symmetry,
+        exact lookup_eq_2,
+        rw lookup_list,
+        have : ∀ l : list (α × α), to_snd <$> prod.to_sigma <$> l = prod.snd <$> l,
+        {
+          clear_except,
+          intros,
+          unfold functor.map,
+          induction l,
+          simp_rw list.map_nil,
+          simp_rw list.map_cons,
+          obtain ⟨x, y⟩ := l_hd,
+          simp,
+          rw ← l_ih,
+          symmetry,
+          apply list.map_map,
+        },
+        rw this, clear this,
+        rw list.map_snd_of_zip,
+        apply le_of_eq,
+        apply list.perm.length_eq,
+        symmetry,
+        exact l.prop,
+      }
+    }
+  }
+}
+
+def to_fun_surjective : surjective to_fun_val := by {
+  unfold surjective,
+  intros b,
+
+}
+
+def to_fun : {f : α → α // bijective f} :=
+  ⟨to_fun_val,
+    by {
+      split,
+
+
+-- now onto surjectivity
+
+    }
+  ⟩
+
+end to_fun
+
+lemma ordered_fintype.perm_of_elems_equiv_to_equiv :
+  {l : list α // (fintype.elems α).sort (≤) ~ l} ≃ (α ≃ α) := {
+    to_fun := to_fun,
+    inv_fun := _,
+    left_inv := _,
+    right_inv := _,
+  }
+
+end perm_of_elems_equiv_bijection
+
+lemma rcmd.taffoli_universal :
+  ∀ n (f : array n bool ≃ array n bool),
+    ∃ (program : list (rcmd (n + 2))), ∀ input,
+      (run_ancilla 2 program input) = (f input, {data := λ _, ff}) := by {
+  intros n f,
+
+
+
+}
