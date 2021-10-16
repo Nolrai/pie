@@ -546,16 +546,6 @@ lemma mem_split_at_mem
   right, assumption,
 }
 
-lemma map_snd_of_zip (lₗ lᵣ : list α) (length_ok : lᵣ.length ≤ lₗ.length) :
-  prod.snd <$> lₗ.zip lᵣ = lᵣ := by {
-  revert lₗ,
-  induction lᵣ, {simp},
-  intros,
-  cases lₗ, {simp at length_ok, cases length_ok},
-  simp at *,
-  apply lᵣ_ih _ length_ok,
-}
-
 end list
 
 section perm_of_elems_equiv_bijection
@@ -566,9 +556,48 @@ section to_fun
 
 parameter (l : {l : list α // (fintype.elems α).sort (≤) ~ l})
 
-def lookup_list : list (Σ x : α, α) := prod.to_sigma <$> ((fintype.elems α).sort (≤)).zip l.val
-def lookup_list_inv : list (Σ x : α, α) := prod.to_sigma <$> l.val.zip ((fintype.elems α).sort (≤))
+lemma lookup_list_aux :
+  (finset.sort (≤) (fintype.elems α)).length = l.val.length := by {
+    obtain ⟨l, l_h⟩ := l,
+    apply list.perm.length_eq,
+    transitivity l,
+    exact l_h,
+    simp,
+}
 
+
+def lookup_list : alist (λ x : α, α) :=
+  alist.mk (prod.to_sigma <$> l.val.zip ((fintype.elems α).sort (≤))) (by {
+    rw list.nodupkeys,
+    rw list.keys,
+    unfold functor.map,
+    rw list.map_map,
+    have :  (sigma.fst ∘ prod.to_sigma) = (prod.fst : α × α → α) := by
+      {rw function.comp, simp},
+    rw this, clear this,
+    rw list.map_fst_zip,
+    obtain ⟨l, l_h⟩ := l,
+    refine (eq.refl l.nodup).mpr _,
+    rw ← list.perm.nodup_iff l_h,
+    apply finset.sort_nodup,
+    apply le_of_eq,
+    rw lookup_list_aux,
+})
+
+def lookup_list_inv : alist (λ x : α, α) :=
+  alist.mk (prod.to_sigma <$> ((fintype.elems α).sort (≤)).zip l.val) (by {
+    rw list.nodupkeys,
+    rw list.keys,
+    unfold functor.map,
+    rw list.map_map,
+    have :  (sigma.fst ∘ prod.to_sigma) = (prod.fst : α × α → α) := by
+      {rw function.comp, simp},
+    rw this, clear this,
+    rw list.map_fst_zip,
+    apply finset.sort_nodup,
+    apply le_of_eq,
+    rw lookup_list_aux,
+})
 
 def option.from_some {α} : ∀ (x : option α), x ≠ none → α
   | (some a) _ := a
@@ -599,7 +628,7 @@ lemma option.some_from_some {α} {x : option α} {p} : some (x.from_some p) = x 
   rw option.from_some,
 }
 
-def to_fun_val (a : α) : α :=
+def to_fun_to_fun (a : α) : α :=
   (list.lookup a lookup_list).from_some
     (by {
       intros eq_none,
@@ -625,7 +654,7 @@ def to_fun_val (a : α) : α :=
       apply fintype.complete,
     })
 
-def to_fun_val_inv (a : α) : α :=
+def to_fun_inv_fun (a : α) : α :=
   (list.lookup a lookup_list_inv).from_some
     (by {
       intros eq_none,
@@ -652,165 +681,60 @@ def to_fun_val_inv (a : α) : α :=
       apply fintype.complete,
     })
 
-lemma to_fun_aux {a : α} : (a, to_fun_val a).to_sigma ∈ lookup_list := by {
-  apply list.lookup_eq_some_mem,
-  rw to_fun_val,
-  rw option.some_from_some,
+lemma lookup_list_nodupkeys : lookup_list.nodupkeys := by {
+  rw lookup_list,
+  unfold functor.map,
+  unfold list.nodupkeys,
+  unfold list.keys,
+  rw list.map_map,
+  have : sigma.fst ∘ prod.to_sigma = prod.fst,
+  {rw function.comp, simp},
+  rw this, clear this,
+  rw list.map_fst_zip,
+  apply finset.sort_nodup,
+  rw list.perm.length_eq,
+  apply l.prop,
 }
 
-lemma to_fun_injective : injective to_fun_val := by {
-  intros a₁ a₂ f_a₁_eq_f_a₂,
-  have a₁_f_a₁_in_lookup_list : (a₁, to_fun_val a₁).to_sigma ∈ lookup_list,
-  apply to_fun_aux,
-  have a₁_f_a₂_in_lookup_list : (a₂, to_fun_val a₁).to_sigma ∈ lookup_list,
-  rw f_a₁_eq_f_a₂,
-  apply to_fun_aux,
-  have a₁_a₂ : decidable (a₁ = a₂) := by apply_instance,
-  cases a₁_a₂, rotate, exact a₁_a₂, rotate,
-
-  suffices : ∃ l₁ l₂ a, a ∈ l₁ ∧ a ∈ l₂ ∧ l₁ ++ l₂ = l.val,
-  {
-    exfalso,
-    have l_nodup : l.val.nodup,
-    {
-      apply (list.perm.nodup_iff l.prop).mp,
-      exact finset.sort_nodup has_le.le (fintype.elems α)
-    },
-    obtain ⟨l₁, l₂, a, a_in_l₁, a_in_l₂, l₁l₂_eq_l⟩ := this,
-    suffices : a ≠ a, {apply this, refl},
-    apply list.ne_of_nodup_append,
-    apply a_in_l₁,
-    apply a_in_l₂,
-    rw l₁l₂_eq_l,
-    assumption,
-  },
-
-  have : ∃ llₗ llᵣ,
-    lookup_list = llₗ ++ (a₁, to_fun_val a₁).to_sigma :: llᵣ ∧
-      ((a₂, to_fun_val a₁).to_sigma ∈ llₗ ∨ (a₂, to_fun_val a₁).to_sigma ∈ llᵣ),
-  {
-    apply list.mem_split_at_mem; try {assumption},
-    intros ne_hyp,
-    apply a₁_a₂,
-    cases ne_hyp,
-    refl,
-  }, clear f_a₁_eq_f_a₂ a₁_f_a₁_in_lookup_list a₁_f_a₂_in_lookup_list,
-  obtain ⟨llₗ, llᵣ, lookup_list_eq, in_ll⟩ := this,
-
-  {
-    rcases in_ll with (in_llₗ | in_llᵣ),
-    {
-      set to_snd : (Σ (x : α), α) → α := sigma.snd with to_snd_def,
-      have lookup_eq_2 : to_snd <$> lookup_list = to_snd <$> llₗ ++ to_fun_val a₁ :: to_snd <$> llᵣ,
-      rw lookup_list_eq,
-      simp,
-      use [to_snd <$> llₗ, to_fun_val a₁ :: to_snd <$> llᵣ, to_fun_val a₁],
-      split,
-      {
-        unfold functor.map,
-        rw list.mem_map,
-        use (a₂, to_fun_val a₁).to_sigma,
-        split,
-        exact in_llₗ,
-        unfold prod.to_sigma,
-      },
-      split, {apply list.mem_cons_self},
-      {
-        transitivity (to_snd <$> lookup_list),
-        symmetry,
-        exact lookup_eq_2,
-        rw lookup_list,
-        have : ∀ l : list (α × α), to_snd <$> prod.to_sigma <$> l = prod.snd <$> l,
-        {
-          clear_except,
-          intros,
-          unfold functor.map,
-          induction l,
-          simp_rw list.map_nil,
-          simp_rw list.map_cons,
-          obtain ⟨x, y⟩ := l_hd,
-          simp,
-          rw ← l_ih,
-          symmetry,
-          apply list.map_map,
-        },
-        rw this, clear this,
-        rw list.map_snd_of_zip,
-        apply le_of_eq,
-        apply list.perm.length_eq,
-        symmetry,
-        exact l.prop,
-      }
-    },
-    {
-      set to_snd : (Σ (x : α), α) → α := sigma.snd with to_snd_def,
-      have lookup_eq_2 :
-        to_snd <$> lookup_list = to_snd <$> llₗ ++ [to_fun_val a₁] ++ to_snd <$> llᵣ,
-      {
-        rw lookup_list_eq,
-        simp,
-      },
-      use [to_snd <$> llₗ ++ [to_fun_val a₁], to_snd <$> llᵣ, to_fun_val a₁],
-      split,
-      {
-        apply list.mem_append_right,
-        apply list.mem_cons_self,
-      },
-      split,
-      {
-        unfold functor.map,
-        rw list.mem_map,
-        use (a₂, to_fun_val a₁).to_sigma,
-        split,
-        exact in_llᵣ,
-        unfold prod.to_sigma,
-      },
-      {
-        transitivity (to_snd <$> lookup_list),
-        symmetry,
-        exact lookup_eq_2,
-        rw lookup_list,
-        have : ∀ l : list (α × α), to_snd <$> prod.to_sigma <$> l = prod.snd <$> l,
-        {
-          clear_except,
-          intros,
-          unfold functor.map,
-          induction l,
-          simp_rw list.map_nil,
-          simp_rw list.map_cons,
-          obtain ⟨x, y⟩ := l_hd,
-          simp,
-          rw ← l_ih,
-          symmetry,
-          apply list.map_map,
-        },
-        rw this, clear this,
-        rw list.map_snd_of_zip,
-        apply le_of_eq,
-        apply list.perm.length_eq,
-        symmetry,
-        exact l.prop,
-      }
-    }
-  }
+lemma lookup_list_inv_nodupkeys : lookup_list_inv.nodupkeys := by {
+  rw lookup_list_inv,
+  unfold functor.map,
+  unfold list.nodupkeys,
+  unfold list.keys,
+  rw list.map_map,
+  have : sigma.fst ∘ prod.to_sigma = prod.fst,
+  {rw function.comp, simp},
+  rw this, clear this,
+  rw list.map_fst_zip,
+  simp,
+  rw ← list.perm.nodup_iff l.prop,
+  apply finset.sort_nodup,
+  rw list.perm.length_eq,
+  symmetry,
+  apply l.prop,
 }
 
-def to_fun_surjective : surjective to_fun_val := by {
-  unfold surjective,
-  intros b,
+lemma to_fun_eq_iff (x y) : to_fun_to_fun x = y ↔ (x,y).to_sigma ∈ lookup_list := by {
+  rw to_fun_to_fun,
+  rw option.from_some_eq_iff,
+  split, {apply list.lookup_eq_some_mem},
+  intros h,
+  have := list.split_at_mem h,
+  obtain ⟨lₗ, lᵣ, lookup_list_eq⟩ := this,
+  apply list.lookup_
+}
+
+lemma left_inv : left_inverse to_fun_inv_fun to_fun_to_fun := by {
+  intros x,
 
 }
 
-def to_fun : {f : α → α // bijective f} :=
-  ⟨to_fun_val,
-    by {
-      split,
-
-
--- now onto surjectivity
-
-    }
-  ⟩
+def to_fun : α ≃ α :=
+{
+  to_fun := to_fun_to_fun,
+  inv_fun := to_fun_inv_fun,
+  left_inv := by {extract_goal,
+}
 
 end to_fun
 
