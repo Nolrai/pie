@@ -566,7 +566,7 @@ lemma lookup_list_aux :
 }
 
 
-def lookup_list : alist (λ x : α, α) :=
+def lookup_list_inv : alist (λ x : α, α) :=
   alist.mk (prod.to_sigma <$> l.val.zip ((fintype.elems α).sort (≤))) (by {
     rw list.nodupkeys,
     rw list.keys,
@@ -584,7 +584,7 @@ def lookup_list : alist (λ x : α, α) :=
     rw lookup_list_aux,
 })
 
-def lookup_list_inv : alist (λ x : α, α) :=
+def lookup_list : alist (λ x : α, α) :=
   alist.mk (prod.to_sigma <$> ((fintype.elems α).sort (≤)).zip l.val) (by {
     rw list.nodupkeys,
     rw list.keys,
@@ -599,133 +599,142 @@ def lookup_list_inv : alist (λ x : α, α) :=
     rw lookup_list_aux,
 })
 
-def option.from_some {α} : ∀ (x : option α), x ≠ none → α
-  | (some a) _ := a
-  | none p := by {exfalso, apply p, refl}
-
-lemma option.from_some_injective {α} : ∀ {x y : option α} {px py},
-  x.from_some px = y.from_some py → x = y
-  | (some a) (some .(a)) _ _ rfl := rfl
-  | none _ px _ h := by {exfalso, apply px, refl}
-  | _ none _ py h := by {exfalso, apply py, refl}
-
-lemma option.from_some_eq_iff {α : Type} : ∀ {x : option α} {p : x ≠ none} {a : α},
-  x.from_some p = a ↔ x = some a := by {
-    intros,
-    cases x,
-    exfalso,
-    apply p,
-    refl,
-    rw option.from_some,
-    split; intro h,
-    congr; apply h,
-    injection h,
-  }
-
-lemma option.some_from_some {α} {x : option α} {p} : some (x.from_some p) = x := by {
-  cases x,
-  {exfalso, apply p, refl},
-  rw option.from_some,
-}
+def to_fun_inv_fun (a : α) : α :=
+  (alist.lookup a lookup_list_inv).get_or_else a
 
 def to_fun_to_fun (a : α) : α :=
-  (list.lookup a lookup_list).from_some
-    (by {
-      intros eq_none,
-      rw list.lookup_eq_none at eq_none,
-      apply eq_none,
-      rw lookup_list,
-      rw list.keys,
-      unfold functor.map,
-      rw list.map_map,
-      have :
-        list.map (sigma.fst ∘ prod.to_sigma) ((finset.sort has_le.le (fintype.elems α)).zip l.val) =
-          finset.sort has_le.le (fintype.elems α),
-      {
-        unfold comp,
-        simp,
-        rw list.map_fst_zip,
-        apply le_of_eq,
-        apply list.perm.length_eq,
-        apply l.prop,
-      },
-      rw this, clear this,
-      rw finset.mem_sort,
-      apply fintype.complete,
-    })
+  (alist.lookup a lookup_list).get_or_else a
 
-def to_fun_inv_fun (a : α) : α :=
-  (list.lookup a lookup_list_inv).from_some
-    (by {
-      intros eq_none,
-      rw list.lookup_eq_none at eq_none,
-      apply eq_none,
-      rw lookup_list_inv,
-      rw list.keys,
-      unfold functor.map,
-      rw list.map_map,
-      have :
-        list.map (sigma.fst ∘ prod.to_sigma) (l.val.zip (finset.sort has_le.le (fintype.elems α))) =
-          l,
-      {
-        unfold comp,
-        simp,
-        rw list.map_fst_zip,
-        apply le_of_eq,
-        apply list.perm.length_eq,
-        apply l.prop.symm,
-      },
-      rw this, clear this,
-      rw ← list.perm.mem_iff l.prop,
-      rw finset.mem_sort,
-      apply fintype.complete,
-    })
+lemma dec_p_p_iff (P Q : Prop) [decidable P] : (P → Q) → (¬P → ¬ Q) → (P ↔ Q)
+  | h anti_h :=
+    {
+      mp := h,
+      mpr := λ (q : Q),
+        if p : P
+          then p
+          else false.rec P (anti_h p q)
+    }
 
-lemma lookup_list_nodupkeys : lookup_list.nodupkeys := by {
-  rw lookup_list,
-  unfold functor.map,
-  unfold list.nodupkeys,
-  unfold list.keys,
-  rw list.map_map,
-  have : sigma.fst ∘ prod.to_sigma = prod.fst,
-  {rw function.comp, simp},
-  rw this, clear this,
-  rw list.map_fst_zip,
-  apply finset.sort_nodup,
-  rw list.perm.length_eq,
-  apply l.prop,
+lemma list.tl_nodupKeys {γ} {β : γ → Type} {hd} {tl : list (sigma β)} : (hd :: tl).nodupkeys → tl.nodupkeys := by {
+  intros h ,
+  unfold list.keys list.nodupkeys at *,
+  simp at *,
+  exact h.right,
 }
 
-lemma lookup_list_inv_nodupkeys : lookup_list_inv.nodupkeys := by {
-  rw lookup_list_inv,
-  unfold functor.map,
-  unfold list.nodupkeys,
-  unfold list.keys,
-  rw list.map_map,
-  have : sigma.fst ∘ prod.to_sigma = prod.fst,
-  {rw function.comp, simp},
-  rw this, clear this,
-  rw list.map_fst_zip,
+lemma alist.lookup_eq_some_iff
+  {β : α → Type} [∀ a : α, decidable_eq (β a)]
+  (l : alist β) (a b) :
+  l.lookup a = some b ↔ sigma.mk a b ∈ l.entries :=
+by {
+  obtain ⟨l, l_nodupkeys⟩ := l,
+  unfold alist.lookup,
   simp,
-  rw ← list.perm.nodup_iff l.prop,
-  apply finset.sort_nodup,
-  rw list.perm.length_eq,
-  symmetry,
-  apply l.prop,
+  induction l,
+  case nil {
+    rw list.lookup_nil,
+    transitivity false,
+    {symmetry, rw false_iff, intros h, cases h},
+    {rw false_iff, exact list.not_mem_nil ⟨a, b⟩}
+  },
+  case cons {
+    symmetry,
+    apply dec_p_p_iff; intros P,
+    {
+      cases P,
+      {
+        rw ← P,
+        rw list.lookup_cons_eq,
+      },
+      {
+        simp at l_nodupkeys,
+        obtain ⟨l_nodupkeys_hd, l_nodupkeys_tl⟩ := l_nodupkeys,
+        rw list.lookup_cons_ne,
+        rw l_ih, exact P, exact l_nodupkeys_tl,
+        have : a ∈ l_tl.keys,
+        {
+          unfold list.keys,
+          rw list.mem_map,
+          use ⟨a, b⟩, split,
+          exact P,
+          simp,
+        },
+        intros a_eq_l_hd,
+        apply l_nodupkeys_hd,
+        rw ← a_eq_l_hd,
+        exact this,
+      }
+    },
+    obtain ⟨hdα, hdβ⟩ := l_hd,
+    have : decidable (a = hdα) := by apply_instance,
+    obtain (a_neq_hdα | a_eq_hdα) := this,
+    {
+      rw list.lookup_cons_ne,
+      rw l_ih,
+      exact list.not_mem_of_not_mem_cons P,
+      apply list.tl_nodupKeys; assumption,
+      simp only [rfl],
+      assumption
+    },
+    {
+      cases a_eq_hdα,
+      rw list.lookup_cons_eq,
+      simp,
+      intros h,
+      apply P,
+      rw h,
+      left,
+      refl,
+    }
+  }
 }
 
-lemma to_fun_eq_iff (x y) : to_fun_to_fun x = y ↔ (x,y).to_sigma ∈ lookup_list := by {
-  rw to_fun_to_fun,
-  rw option.from_some_eq_iff,
-  split, {apply list.lookup_eq_some_mem},
-  intros h,
-  have := list.split_at_mem h,
-  obtain ⟨lₗ, lᵣ, lookup_list_eq⟩ := this,
-  apply list.lookup_
+lemma aux (l₁ l₂ : alist (λ _:α, α)) :
+  (∀ a b : α, sigma.mk a b ∈ l₁.entries ↔ sigma.mk b a ∈ l₂.entries) →
+  ∀ a, (l₁.lookup a >>= (λ x, alist.lookup x l₂)) = some a ∨
+     (l₁.lookup a >>= (λ x, alist.lookup x l₂)) = none := by {
+  intros h a,
+  have l₁_lookup : (l₁.lookup a = none) ∨ (∃ b, l₁.lookup a = some b),
+  {
+    cases l₁.lookup a,
+    left, refl,
+    right, use val,
+  },
+  cases l₁_lookup,
+  {
+    right,
+    rw l₁_lookup,
+    apply option.none_bind
+  },
+  {
+    obtain ⟨b, b_def⟩ := l₁_lookup,
+    rw b_def,
+    rw option.some_bind,
+    left,
+    rw alist.lookup_eq_some_iff,
+    rw ← h,
+    rw ← alist.lookup_eq_some_iff,
+    exact b_def,
+    all_goals {apply_instance},
+  }
+}
+
+lemma option.get_or_else_eq_bind
+  {β γ}
+  (y : β) (x : option β) (h₁ : x.is_some) (f : β → option γ) :
+  (f (x.get_or_else y)) = (x >>= f) := by {
+  cases x,
+  exfalso, unfold option.is_some at h₁, exact bool.not_ff h₁,
+  simp,
 }
 
 lemma left_inv : left_inverse to_fun_inv_fun to_fun_to_fun := by {
   intros x,
+  rw to_fun_to_fun,
+  rw to_fun_inv_fun,
+  set y := alist.lookup x lookup_list with y_def,
+  set f := ((λ z, alist.lookup z lookup_list_inv) : α → option α) with f_def,
+  have y_is_some : y ≠ none := sorry,
 
 }
 
