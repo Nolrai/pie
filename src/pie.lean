@@ -5,7 +5,6 @@ import tactic.omega
 import control.bifunctor
 import init.control.monad_fail
 
-
 universes u v
 
 inductive op_tree (op_t : Sort u) (leaf_t : Sort v) 
@@ -323,42 +322,45 @@ def get_type_at :
     {exact ⟨A, B, t⟩},
     {
       let pie_up := (on_left c_op root c_right).plug_in p,
-      have : Σ A' B', pie_typed pie_up A' B' := c_ih pie_up t,
-      obtain ⟨A', B', pie_up_typed⟩ := this,
-      have : pie_up = op_tree.branch c_op p c_right := rfl,
-      rw this at *,
-      clear this pie_up,
-      cases pie_up_typed,
-      {
-        existsi A', 
-        existsi pie_up_typed_b,
-        assumption,
-      },
-      all_goals { try {
-        existsi pie_up_typed_a, 
-        existsi pie_up_typed_b,
-        assumption,
-      }},
-    },
-    {
-      let pie_up := (on_right c_op c_left root).plug_in p,
-      have : Σ A' B', pie_typed pie_up A' B' := c_ih pie_up t,
-      obtain ⟨A', B', pie_up_typed⟩ := this,
-      have : pie_up = op_tree.branch c_op c_left p := rfl,
-      rw this at *,
-      clear this pie_up,
-      cases pie_up_typed,
-      {
-        existsi pie_up_typed_b,
-        existsi B', 
-        assumption,
-      },
-      all_goals {
-        existsi pie_up_typed_c, 
-        existsi pie_up_typed_d,
-        assumption,
-      },
+      have : (Σ A' B' : pie_type, pie_typed pie_up A' B') := c_ih pie_up t,
+      obtain (A', this_snd) := this,
     }
+    --   obtain ⟨A', B', pie_up_typed⟩ := this,
+    --   have : pie_up = op_tree.branch c_op p c_right := rfl,
+    --   rw this at *,
+    --   clear this pie_up,
+    --   cases pie_up_typed,
+    --   {
+    --     existsi A', 
+    --     existsi pie_up_typed_b,
+    --     assumption,
+    --   },
+    --   all_goals { try {
+    --     existsi pie_up_typed_a, 
+    --     existsi pie_up_typed_b,
+    --     assumption,
+    --   }},
+    -- },
+    -- {
+    --   let pie_up := (on_right c_op c_left root).plug_in p,
+    --   have : Σ A' B', pie_typed pie_up A' B' := c_ih pie_up t,
+    --   obtain ⟨A', B', pie_up_typed⟩ := this,
+    --   have : pie_up = op_tree.branch c_op c_left p := rfl,
+    --   rw this at *,
+    --   clear this pie_up,
+    --   cases pie_up_typed,
+    --   {
+    --     existsi pie_up_typed_b,
+    --     existsi B', 
+    --     assumption,
+    --   },
+    --   all_goals {
+    --     existsi pie_up_typed_c, 
+    --     existsi pie_up_typed_d,
+    --     assumption,
+    --   },
+    -- }
+    ,
   }
 
 inductive emptyt.
